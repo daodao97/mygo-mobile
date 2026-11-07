@@ -148,14 +148,10 @@ class MygoImeConnection(private val view: View) : BaseInputConnection(view, true
     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean =
         MygoIme.nativeDeleteSurroundingText(beforeLength, afterLength)
 
-    /**
-     * 折叠请求（start == end）是移动光标；**非折叠请求返回 false**：
-     * mygo 的 `TextInputClient` 没有「设置选中」这一步，唯一能表达的写法是
-     * 把该区间替换成空串 —— 那等于把输入法想选中的文本删掉。宁可如实说
-     * 「没做成」（Android 契约就是 false 表示没做成），也不静默删文本。
-     * 详见 `internal/android/backend/textinput.go` 的 `SetSelection`。
-     */
+    /** 支持可选 SetSelection 契约；旧客户端仅支持折叠光标移动，不删除选区。 */
     override fun setSelection(start: Int, end: Int): Boolean = MygoIme.nativeSetSelection(start, end)
+
+    override fun performContextMenuAction(id: Int): Boolean = MygoSelection.contextAction(view, id)
 
     // ── 查询（输入法要用这些读光标前后的上下文）────────────────────────────
     // `flags` 里的 GET_TEXT_WITH_STYLES 被忽略：mygo 这一层只暴露纯文本，

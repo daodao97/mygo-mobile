@@ -120,7 +120,7 @@ func (s *Surface) SetCursor(platform.Cursor) {}
 // machine, which is what answers an input method's queries and raises the
 // soft keyboard (see textinput.go).
 func (s *Surface) SetTextInput(t platform.TextInputState) {
-	theIme.SetTextInput(t)
+	s.b.setSelectionInput(t)
 }
 
 // UpdateAccessibility pushes the tree to the Java node provider, which is what

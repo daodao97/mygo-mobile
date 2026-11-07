@@ -21,6 +21,7 @@ import android.view.WindowManager
  *  · 屏幕方向策略见 AndroidManifest.xml 的注释（允许旋转 + configChanges）。
  */
 class MygoActivity : Activity() {
+    companion object { private val urlProcess = java.util.UUID.randomUUID().toString() }
 
     private lateinit var view: MygoView
 
@@ -74,9 +75,12 @@ class MygoActivity : Activity() {
             window.setDecorFitsSystemWindows(false)
         }
 
+        MygoServices.install(this)
+        MygoEnvironment.install(this)
         view = MygoView(this)
         // 单层 View 层级：SurfaceView 直接作为 content view。
         setContentView(view)
+        MygoEffects.followTheme(this)
 
         // 让 View 拿到焦点，否则 onKeyDown/onKeyUp 不会派发到它。
         view.grabInputFocus()
@@ -95,27 +99,40 @@ class MygoActivity : Activity() {
 
         // 平台能力（剪贴板/URL/通知/无障碍）的 Java 侧握手；必须在任何平台能力被使用前调用。
         MygoPlatform.install(this, view)
+        if (savedInstanceState?.getString("mygo-url-process") != urlProcess) intent?.dataString?.let { Native.onURL(it.toByteArray(Charsets.UTF_8)) }
 
         // 初始的夜间模式：之后的变化走 onConfigurationChanged（manifest 声明了
         // configChanges=uiMode，切深色模式不重建 Activity，那是 Go 唯一能听到的地方）。
         Native.onTheme(isNight(resources.configuration))
     }
 
+    override fun onSaveInstanceState(state: Bundle) {
+        state.putString("mygo-url-process", urlProcess)
+        super.onSaveInstanceState(state)
+    }
+
     // ── 生命周期转给 Go（编号见 Native.LIFECYCLE_*，与 iOS 一致）──────────────
     // 只转发、不做 surface 动作：surface 的来去仍由 MygoView 的回调负责。
 
+    override fun onNewIntent(intent:Intent){
+        super.onNewIntent(intent);setIntent(intent)
+        intent.dataString?.let{Native.onURL(it.toByteArray(Charsets.UTF_8))}
+    }
     override fun onStart() {
         super.onStart()
-        Native.onLifecycle(Native.LIFECYCLE_START)
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        MygoServices.onUserLeave()
     }
 
     override fun onPause() {
-        Native.onLifecycle(Native.LIFECYCLE_PAUSE)
+        MygoPlatform.pauseTextSelection()
         super.onPause()
     }
 
     override fun onStop() {
-        Native.onLifecycle(Native.LIFECYCLE_STOP)
         super.onStop()
     }
 
@@ -123,6 +140,8 @@ class MygoActivity : Activity() {
         super.onConfigurationChanged(newConfig)
         // Go 侧去重：只有夜间位真的变了才发 ThemeChanged。
         Native.onTheme(isNight(newConfig))
+        MygoEffects.followTheme(this)
+        MygoEnvironment.report()
     }
 
     /**
@@ -151,14 +170,20 @@ class MygoActivity : Activity() {
      */
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        MygoPlatform.onScanResult(requestCode, resultCode, data)
+        if (!MygoPickers.result(this, requestCode, resultCode, data)) MygoPlatform.onScanResult(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        MygoServices.onRequestPermissionsResult(this, requestCode)
     }
 
     override fun onResume() {
         super.onResume()
         // 回到前台后焦点可能被系统收走，重新要一次；这里**不**做任何 surface 生命周期动作。
         view.grabInputFocus()
-        Native.onLifecycle(Native.LIFECYCLE_RESUME)
+        MygoEffects.followTheme(this)
+        MygoEnvironment.report()
     }
 
     // 有意不重写 onDestroy 去释放 Go 侧状态：Go 侧负责保活。

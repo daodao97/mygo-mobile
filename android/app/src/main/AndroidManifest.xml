@@ -31,6 +31,7 @@
          它只绑回环，不接外网；release 包不带那个文件，所以这条也就没有用处，
          留着是因为 debug 包才需要它。 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
       【主题：普通 app，不隐藏系统栏】
@@ -51,8 +52,20 @@
       旧行为（隐藏系统栏）不是不能要，而是它属于全屏类 app（播放器、游戏），
       那时应当由那个 Activity 自己声明。见 MygoActivity 里对 flags 的注释。
     -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <application
         android:allowBackup="false"
+        android:networkSecurityConfig="@xml/mygo_network_security"
         android:label="mygo"
         android:supportsRtl="true"
         android:theme="@style/MygoTheme">
@@ -62,12 +75,14 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden|uiMode">
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden|uiMode|fontScale|locale|layoutDirection|fontWeightAdjustment">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity android:name=".MygoBrowserActivity" android:exported="false" />
 
         <!-- T34: 通知被点击时的回传接收方（org.mygo.MygoPlatform.NotificationReceiver） -->
         <receiver
@@ -79,7 +94,7 @@
           exported=false + grantUriPermissions，只有拿到授权的那个相机应用能写。
         -->
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".MygoFileProvider"
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">

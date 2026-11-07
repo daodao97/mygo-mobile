@@ -136,7 +136,15 @@ object MygoPlatform {
     }
 
     /** Activity 销毁时调用：放开对 Activity/View 的引用。Go 侧不需要额外的 detach。 */
+    fun pauseTextSelection() { host?.let { MygoSelection.pause(it) } }
+
+    fun updateTextSelection(data: ByteArray) {
+        val view = host ?: return
+        onUi { if (host === view && view.isAttachedToWindow) MygoSelection.update(view, data) }
+    }
+
     fun uninstall() {
+        host?.let { MygoSelection.close(it) }
         activity = null
         host = null
         clearAccessibilityTree()
@@ -192,40 +200,11 @@ object MygoPlatform {
      * false（Go 侧的空 Data 走的是 clearClipboard）。空字符串是合法值，与 null 语义不同，
      * 这一点由 Go 侧的 hasPlain/hasHTML 显式传递，本方法不做任何 trim。
      */
-    fun writeClipboard(plain: ByteArray?, html: ByteArray?): Boolean {
-        val cm = clipboardManager() ?: return false
-        val text = plain?.let { String(it, Charsets.UTF_8) }
-        val markup = html?.let { String(it, Charsets.UTF_8) }
-        if (text == null && markup == null) return false
-        return try {
-            val mimes = ArrayList<String>(2)
-            if (text != null) mimes.add("text/plain")
-            if (markup != null) mimes.add("text/html")
-            val item = ClipData.Item(text, markup)
-            cm.setPrimaryClip(ClipData(ClipDescription("mygo", mimes.toTypedArray()), item))
-            true
-        } catch (e: RuntimeException) {
-            // setPrimaryClip 在异常输入下会抛（例如 SecurityException：后台应用在
-            // 某些 OEM 上不允许写）；返回 false 让 Go 侧报错，而不是把异常留在 JNI 线程上。
-            false
-        }
-    }
-
-    /** 清空剪贴板。 */
-    fun clearClipboard(): Boolean {
-        val cm = clipboardManager() ?: return false
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                cm.clearPrimaryClip()
-            } else {
-                // API 24..27 没有 clearPrimaryClip：置一个空文本 clip 等价于「没有东西」。
-                cm.setPrimaryClip(ClipData.newPlainText("", ""))
-            }
-            true
-        } catch (e: RuntimeException) {
-            false
-        }
-    }
+    // One snapshot keeps the representations consistent if another app changes
+    // the clipboard. JSON bytes preserve NUL and supplementary Unicode over JNI.
+    fun readClipboardJSON(): ByteArray = MygoClipboard.read(activity)
+    fun writeClipboardJSON(data: ByteArray): Boolean = MygoClipboard.write(activity, data)
+    fun clearClipboard(): Boolean = MygoClipboard.clear(activity)
 
     private fun clipboardManager(): ClipboardManager? {
         val ctx = activity ?: return null
@@ -972,10 +951,11 @@ object MygoPlatform {
     private fun Manifest_permission_POST_NOTIFICATIONS(): String =
         "android.permission.POST_NOTIFICATIONS"
 
-    private const val SCAN_REQUEST = 0x5CA9
     private const val SCAN_OK = 0
     private const val SCAN_CANCELED = 5
     private const val SCAN_NOT_FOUND = 2
+    private const val SCAN_DENIED = 6
+    private const val SCAN_UNAVAILABLE = 7
     private const val KEY_ALIAS = "mygo-secrets-v1"
     private const val GCM_IV_LEN = 12
     private const val GCM_TAG_BITS = 128
@@ -998,8 +978,8 @@ object MygoPlatform {
     // ── 扫码（系统相机/相册 + 解码）─────────────────────────────────────
     //
     // 不做自己的相机预览：用系统相机拍一张、或用相册里已有的照片，再解码。
-    // 好处是**不需要 CAMERA 权限**（拍照的是相机应用，权限归它）、没有预览
-    // 层的生命周期要管、也不用把相机栈编进来。
+    // Photo Picker 不请求整库权限；声明了 CAMERA 的宿主在委托拍照前仍须
+    // 获取 CAMERA 授权。这里没有应用内相机预览层。
     //
     // 解码用 ZXing core（纯 Java，无 NDK）。它不依赖任何 UI，也不申请权限。
 
@@ -1013,17 +993,16 @@ object MygoPlatform {
      *
      * 编码格式："<code>\n<token>\n<text>"，与 Go 侧的 takeScanResult 对应。
      */
-    private var pendingResult: String? = null
+    private val pendingResults = java.util.concurrent.ConcurrentLinkedQueue<String>()
 
     private fun deliverScanResult(token: Long, text: String?, code: Int) {
-        pendingResult = "$code\n$token\n" + (text ?: "")
+        pendingResults.add("$code\n$token\n" + (text ?: ""))
         android.util.Log.i("mygo", "scan: deliver code=$code len=${text?.length ?: 0}")
     }
 
-    /** Go 侧轮询调用：取走待发的结果，没有就返回 null。 */
-    fun takeScanResult(): String? = pendingResult.also { pendingResult = null }
+    /** UTF-8 bytes preserve supplementary Unicode and embedded NULs over JNI. */
+    fun takeScanResult(): ByteArray? = pendingResults.poll()?.toByteArray(Charsets.UTF_8)
 
-    private var scanToken: Long = 0
     private var pendingScanToken: Long = 0
     /** 相机要写的那个文件；onScanResult 读完就删。 */
     private var scanFile: java.io.File? = null
@@ -1038,33 +1017,65 @@ object MygoPlatform {
      *
      * 结果异步回到 [onScanResult]，那时才调 deliverScanResult。
      */
+    private var scanSourceDialog: android.app.AlertDialog? = null
+    private var scanActivityLaunched = false
+    private var pendingScanRequest = 0
+    private var nextScanRequest = 23721
+    private val scanRequests = mutableMapOf<Int, Long>()
     fun startScan(token: Long, prompt: ByteArray): Boolean {
-        val ctx = activity ?: return false
-        pendingScanToken = token
-        scanToken = token
-        // 先开相册，不开相机。
-        //
-        // 理由：相册里的图是**已经拍好的、清晰的、静止的**，解出来的成功率远高于
-        // 现场手持拍屏幕——实测手持拍一张，对焦稍偏 OpenCV 就解不出。桌面上
-        // 显示二维码时，用系统相机拍一张再回来选，是更稳的路子；用户也能直接
-        // 截屏后选那张截图。
-        //
-        // 相册也不行时（没有照片选择器），才退回相机。
-        return try {
-            ctx.startActivityForResult(
-                Intent(MediaStore.ACTION_PICK_IMAGES).apply { type = "image/*" },
-                SCAN_REQUEST,
-            )
-            android.util.Log.i("mygo", "scan: photo picker up")
-            true
-        } catch (e: Exception) {
-            android.util.Log.w("mygo", "scan: no photo picker, trying the camera: $e")
-            tryCamera(ctx)
+        // Go's pump only enqueues. All scanner decisions, including permission
+        // continuations and cancellation, belong to Android's UI thread.
+        onUi {
+            val ctx = activity
+            if (ctx == null || ctx.isFinishing || ctx.isDestroyed || pendingScanToken != 0L) {
+                deliverScanResult(token, null, SCAN_UNAVAILABLE)
+                return@onUi
+            }
+            val code = (0 until 1024).map { 23721 + ((nextScanRequest - 23721 + it) % 1024) }
+                .firstOrNull { !scanRequests.containsKey(it) }
+            if (code == null) { deliverScanResult(token, null, SCAN_UNAVAILABLE); return@onUi }
+            nextScanRequest = 23721 + ((code - 23721 + 1) % 1024)
+            scanRequests[code] = token; pendingScanRequest = code
+            pendingScanToken = token; scanFile = null; scanActivityLaunched = false
+            val title = String(prompt, Charsets.UTF_8).ifBlank { "Scan a code" }
+            val dialog = android.app.AlertDialog.Builder(ctx).setTitle(title)
+                .setItems(arrayOf("Take a QR photo", "Choose a QR image")) { _, which ->
+                    if (pendingScanToken == token) {
+                        val owner = activity ?: ctx
+                        if (which == 0) {
+                            if (!tryCamera(owner)) failScan(token, SCAN_UNAVAILABLE)
+                        } else {
+                            try {
+                                try { owner.startActivityForResult(Intent(MediaStore.ACTION_PICK_IMAGES).apply { type = "image/*" }, code) }
+                                catch (_: Exception) { owner.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "image/*"; addCategory(Intent.CATEGORY_OPENABLE) }, code) }
+                                scanActivityLaunched = true
+                            } catch (_: Exception) { failScan(token, SCAN_UNAVAILABLE) }
+                        }
+                    }
+                }.setNegativeButton(android.R.string.cancel) { _, _ -> cancelScan(token) }
+                .setOnCancelListener { cancelScan(token) }.create()
+            scanSourceDialog = dialog
+            dialog.setOnDismissListener { if (scanSourceDialog === dialog) scanSourceDialog = null }
+            dialog.show()
         }
+        return true
     }
 
     /** 拍照。相册不可用时才走这里。 */
-    private fun tryCamera(ctx: Activity): Boolean = try {
+    private fun tryCamera(ctx: Activity): Boolean {
+        if (ctx.checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            val token = pendingScanToken
+            MygoServices.cameraForScanner(token, { pendingScanToken == token }) { granted ->
+                if (pendingScanToken == token) {
+                    if (granted) { if (!launchCamera(activity ?: ctx)) failScan(token, SCAN_UNAVAILABLE) }
+                    else failScan(token, SCAN_DENIED)
+                }
+            }
+            return true
+        }
+        return launchCamera(ctx)
+    }
+    private fun launchCamera(ctx: Activity): Boolean = try {
         // 🔴 EXTRA_OUTPUT 必须有。没有它，ACTION_IMAGE_CAPTURE 回来的只是
         // extras["data"] 里的一张**缩略图**（约 100~200px），一张缩略图里的
         // 二维码基本解不出来。
@@ -1084,21 +1095,40 @@ object MygoPlatform {
             Intent(MediaStore.ACTION_IMAGE_CAPTURE)
                 .putExtra(MediaStore.EXTRA_OUTPUT, uri)
                 .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION),
-            SCAN_REQUEST,
+            pendingScanRequest,
         )
-        android.util.Log.i("mygo", "scan: camera up, output=$uri")
+        scanActivityLaunched = true
+        android.util.Log.i("mygo", "scan: camera up")
         true
     } catch (e: Exception) {
         android.util.Log.w("mygo", "scan: could not start the camera: $e")
-        pendingScanToken = 0
         false
+    }
+    private fun failScan(token: Long, code: Int) {
+        if (pendingScanToken != token) return
+        if (!scanActivityLaunched) scanRequests.remove(pendingScanRequest)
+        pendingScanToken = 0; scanFile?.delete(); scanFile = null
+        deliverScanResult(token, null, code)
+    }
+    fun scanHostDestroyed(a: Activity) {
+        if (activity === a && pendingScanToken != 0L && (a.isFinishing || scanSourceDialog?.isShowing == true)) cancelScan(pendingScanToken)
     }
 
     /** 取景界面被收起，但没有结果（用户返回）。 */
     fun cancelScan(token: Long): Boolean {
-        if (pendingScanToken != token) return false
-        pendingScanToken = 0
-        onUi { deliverScanResult(token, null, SCAN_CANCELED) }
+        onUi {
+            if (pendingScanToken == token) {
+                pendingScanToken = 0
+                scanSourceDialog?.dismiss(); scanSourceDialog = null
+                if (!scanActivityLaunched) scanRequests.remove(pendingScanRequest)
+                try { activity?.finishActivity(pendingScanRequest) } catch (_: Exception) {}
+                scanFile?.delete(); scanFile = null
+            }
+            MygoServices.discardScannerPermission(token)
+            // This acknowledgment follows any camera launch already in progress
+            // and its dismissal; Go completes cancellation only after receiving it.
+            deliverScanResult(token, null, SCAN_CANCELED)
+        }
         return true
     }
 
@@ -1109,16 +1139,9 @@ object MygoPlatform {
      * 会卡住界面。
      */
     fun onScanResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != SCAN_REQUEST) {
-            android.util.Log.i("mygo", "scan: ignoring result for code $requestCode")
-            return
-        }
-        val token = pendingScanToken
+        val token = scanRequests.remove(requestCode) ?: return
+        if (pendingScanToken != token) return // Result of an already canceled picker.
         pendingScanToken = 0
-        if (token == 0L) {
-            android.util.Log.w("mygo", "scan: result with no pending token")
-            return
-        }
         val ctx = activity
         android.util.Log.i(
             "mygo", "scan: result token=$token code=$resultCode data=${data != null} file=${scanFile?.length() ?: -1}",
@@ -1151,6 +1174,7 @@ object MygoPlatform {
         val thumb = data?.extras?.get("data") as? android.graphics.Bitmap
         val uri = data?.data
         val file = scanFile
+        scanFile = null
         Thread {
             val text = try {
                 val bitmap = when {

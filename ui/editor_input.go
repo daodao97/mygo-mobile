@@ -143,7 +143,8 @@ func (w *widgetTextInput) Selection() TextInputSelection {
 		if ed.password {
 			start = 0
 		}
-		return TextInputSelection{Range: TextInputRange{Start: start + ed.composeSelected.Start, End: start + ed.composeSelected.End}}
+		selected := platform.NormalizeTextRange(ed.composeSelected)
+		return TextInputSelection{Range: TextInputRange{Start: start + selected.Start, End: start + selected.End}, Reversed: ed.composeSelected.Start > ed.composeSelected.End}
 	}
 	if ed.password {
 		return TextInputSelection{}

@@ -68,6 +68,7 @@ type Ime struct {
 	// built later can read it without the state having to be re-sent. The
 	// Java side asks for it in onCreateInputConnection.
 	options platform.TextInputOptions
+	state   platform.TextInputState
 }
 
 // theIme is the process's single state machine. Android has one Activity and
@@ -83,13 +84,11 @@ func TheIme() *Ime { return theIme }
 // platform.Surface.SetTextInput describes it. It is what the Android Surface
 // calls.
 //
-// Only Client is used: the Text/Start/End snapshot is the plain-widget and
-// TextCaret fallback, and the Android backend has no SurfaceEvent path to
-// deliver it through (the touch and key stubs in app.go are where one would
-// go). A platform.TextInputState with no client therefore raises no keyboard
-// — this backend could not type into it — which is why the keyboard sink is
-// told "active and editable", not merely "active".
+// Surface adapts read-only snapshots before calling this. Editable custom
+// clients retain their indexed input contract; read-only selection never opens
+// a keyboard or accepts composition edits.
 func (m *Ime) SetTextInput(t platform.TextInputState) {
+	m.state = t
 	if !t.Active {
 		m.SetClient(nil)
 		m.active(false)
@@ -97,7 +96,7 @@ func (m *Ime) SetTextInput(t platform.TextInputState) {
 	}
 	m.SetClient(t.Client)
 	m.setOptions(t.Options)
-	m.active(t.Client != nil)
+	m.active(t.Client != nil && !t.ReadOnly && !t.NoInputMethod)
 }
 
 // setOptions reports the keyboard traits to the host, when they changed.
@@ -170,7 +169,7 @@ func (m *Ime) Client() platform.TextInputClient { return m.client }
 // marked text directly, so nothing has to be corrected afterwards.
 func (m *Ime) SetComposingText(text string, newCursorPosition int) bool {
 	c := m.client
-	if c == nil {
+	if c == nil || m.state.ReadOnly {
 		return false
 	}
 	m.comp.Reset()
@@ -206,7 +205,7 @@ func preeditCaret(text string, newCursorPosition int) int {
 // would be a second copy of a decision the platform already made.
 func (m *Ime) CommitText(text string, newCursorPosition int) bool {
 	c := m.client
-	if c == nil {
+	if c == nil || m.state.ReadOnly {
 		return false
 	}
 	m.comp.Replace(c, nil, text)
@@ -249,7 +248,7 @@ func (m *Ime) placeCaret(c platform.TextInputClient, text string, newCursorPosit
 // instead of after it (platform/text_input.go:46).
 func (m *Ime) FinishComposingText() bool {
 	c := m.client
-	if c == nil {
+	if c == nil || m.state.ReadOnly {
 		return false
 	}
 	m.comp.End(c)
@@ -266,7 +265,7 @@ func (m *Ime) FinishComposingText() bool {
 // inside the preedit.
 func (m *Ime) DeleteSurroundingText(beforeLength, afterLength int) bool {
 	c := m.client
-	if c == nil {
+	if c == nil || m.state.ReadOnly {
 		return false
 	}
 	// An unrelated edit invalidates a pending end: the range it remembered
@@ -296,32 +295,53 @@ func (m *Ime) DeleteSurroundingText(beforeLength, afterLength int) bool {
 // an input method that re-states the caret it already had must not end the
 // preedit it is in the middle of).
 //
-// A request that selects a range is reported as not performed instead of
-// being faked. TextInputClient can only replace a range with text, and
-// replacing one with the empty string deletes it — which is precisely what
-// selecting it must not do. Android's contract says to return false when the
-// action was not taken, and a false is the only answer here that does not
-// destroy the text the input method asked to select. This is a contract gap,
-// not a translation gap: a client-side SetSelection would close it (see the
-// task's output).
+// A client with TextInputSelectionClient receives the range directly. Legacy
+// clients without that optional contract support collapsed caret moves only;
+// selecting must never be emulated by deleting text.
 func (m *Ime) SetSelection(start, end int) bool {
 	c := m.client
 	if c == nil {
 		return false
 	}
 	start, end = max(0, start), max(0, end)
-	if start > end {
+	reversed := start > end
+	if reversed {
 		start, end = end, start
 	}
-	if start != end {
-		return false
-	}
-	if c.Selection().Caret() == start {
+	wanted := platform.TextSelection{Range: platform.TextRange{Start: start, End: end}, Reversed: reversed && start != end}
+	if current := c.Selection(); current == wanted {
 		return true
 	}
-	m.comp.Reset()
-	m.moveCaret(c, start)
-	return true
+	// Legacy indexed clients keep their zero-length replacement caret path.
+	if start == end && !m.state.ReadOnly {
+		m.comp.Reset()
+		m.moveCaret(c, start)
+		return true
+	}
+	if setter, ok := nativeSelectionSetter(c); ok {
+		m.comp.Reset()
+		// A changed selection ends the current preedit before choosing its new
+		// range. Rich-text clients use their caret as the preedit insertion base.
+		if !m.state.ReadOnly {
+			if _, marked := c.MarkedRange(); marked {
+				c.UnmarkText()
+			}
+		}
+		setter.SetSelection(wanted)
+		return true
+	}
+
+	return false
+}
+
+// Some UI adapters support the optional setter only when their underlying
+// custom client does. Do not claim a range update for a legacy no-op adapter.
+func nativeSelectionSetter(c platform.TextInputClient) (platform.TextInputSelectionClient, bool) {
+	if cap, ok := c.(interface{ SupportsNativeTextSelection() bool }); ok && !cap.SupportsNativeTextSelection() {
+		return nil, false
+	}
+	setter, ok := c.(platform.TextInputSelectionClient)
+	return setter, ok
 }
 
 // moveCaret moves the caret with the one edit the contract allows it: a

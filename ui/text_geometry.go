@@ -20,8 +20,7 @@ func platformRect(r Rect) platform.RectF {
 }
 
 func (rt *engine) nativeSelection(s *state) bool {
-	h, ok := rt.host.(interface{ nativeTextSelection() bool })
-	if !ok || !h.nativeTextSelection() || !rt.windowFocused || s.editor == nil || s.editor.password || s.editor.compose != "" {
+	if s.editor == nil || !rt.nativeSelectionAvailable(s.editor.readOnly) || !rt.windowFocused || s.editor.password || s.editor.compose != "" {
 		return false
 	}
 	if rt.focused == s.id {

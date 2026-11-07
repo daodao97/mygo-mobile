@@ -28,8 +28,9 @@ func (b *Backend) OnLifecycle(kind int) {
 // Init have no one to tell and are dropped: the first onResume comes before
 // App.Run, and the window it would focus does not exist yet.
 func (b *Backend) lifecycle(kind int) {
+	b.lifecycleKind, b.lifecycleKnown = kind, true
 	h := b.handler()
-	if h == nil {
+	if h == nil || !b.readyFired.Load() {
 		return
 	}
 	w := b.win
@@ -118,6 +119,7 @@ func (t theme) SetSource(source string) {
 	t.b.mu.Lock()
 	t.b.themeSource = source
 	t.b.mu.Unlock()
+	_ = t.b.NativeFire("theme-source", source)
 	if t.IsDark() != before {
 		t.b.Post(t.b.themeChanged)
 	}

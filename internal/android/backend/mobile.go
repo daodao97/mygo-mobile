@@ -2,9 +2,8 @@
 
 package backend
 
-// The phone capabilities Android has: scanning the desktop's QR code, the
-// haptic, the keyboard. The rest — badge, status bar, push — are unsupported
-// and come from the embedded unsupported backend.
+// Android phone capabilities are routed through the asynchronous native bridge.
+// Remote push requires a separately configured provider.
 //
 // Scanning is the system's camera app, not a preview of ours: ACTION_PICK an
 // image with ACTION_IMAGE_CAPTURE, or the photo the person already has. That
@@ -13,6 +12,7 @@ package backend
 // the platform's own in MygoPlatform.scanImage.
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"sync"
@@ -25,15 +25,22 @@ func (b *Backend) Mobile() platform.Mobile { return androidMobile{b: b} }
 
 type androidMobile struct{ b *Backend }
 
-// Haptic is the system's own feedback, and there is no JNI method for it yet:
-// reporting it unsupported is honest, and the ui package falls back to nothing.
-func (androidMobile) Haptic(string) error { return platform.ErrUnsupported }
+// Haptic queues native feedback; the system may suppress it on unsupported
+// hardware or according to the user's feedback settings.
+func (m androidMobile) Haptic(kind string) error { return m.b.NativeFire("haptic", kind) }
 
-// SetBadge answers at once: App.SetNotificationBadge awaits done, so a stub
-// that never calls it hangs the caller for good.
-func (androidMobile) SetBadge(_ int, done func(error)) { done(platform.ErrUnsupported) }
-func (androidMobile) SetStatusBar(string, bool) error  { return platform.ErrUnsupported }
-func (androidMobile) RegisterPush() error              { return platform.ErrUnsupported }
+// SetBadge uses the launcher's notification badge support. Android launchers
+// choose whether to display a dot or a count.
+func (m androidMobile) SetBadge(count int, done func(error)) {
+	m.b.NativeRequest("badge", count, func(_ json.RawMessage, err error) { done(err) })
+}
+func (m androidMobile) SetStatusBar(style string, hidden bool) error {
+	return m.b.NativeFire("status-bar", struct {
+		Style  string `json:"style"`
+		Hidden bool   `json:"hidden"`
+	}{style, hidden})
+}
+func (androidMobile) RegisterPush() error { return platform.ErrUnsupported }
 
 // Device names this phone to desktops. There is no JNI method for the model
 // string yet, so it is the host's answer — right on the OS, generic on the
@@ -68,8 +75,13 @@ func (m androidMobile) ScanCode(o platform.ScanOptions, done func(string, error)
 		done("", err)
 	}
 	return func() {
-		if _, ok := scanTokens.LoadAndDelete(token); ok {
-			_ = platformBridge().ScanCancel(token)
+		if _, ok := scanTokens.Load(token); ok {
+			if err := platformBridge().ScanCancel(token); err != nil {
+				if v, ok := scanTokens.LoadAndDelete(token); ok {
+					v.(func(string, error))("", err)
+				}
+			}
+			// The native acknowledgment completes the request after dismissal.
 		}
 	}
 }
@@ -130,3 +142,5 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
+
+func ScanPending(token uint64) bool { _, ok := scanTokens.Load(token); return ok }

@@ -119,8 +119,10 @@ type androidFallbackKey struct {
 
 // androidFont is a font read from a font file.
 type androidFont struct {
-	face *font.Face
-	upem float32
+	path       string
+	collection int
+	face       *font.Face
+	upem       float32
 }
 
 // androidSystemFont is a font Android has: the file it lives in, its place
@@ -187,6 +189,7 @@ func (e *androidEngine) readFile(path string, index int) (int, bool) {
 	i := -1
 	if index >= 0 && index < len(faces) {
 		i = e.addFace(faces[index])
+		e.faces[i].path, e.faces[i].collection = path, index
 	}
 	if chb, ok := e.shaper.(*shaping.CHBShaper); ok && i >= 0 {
 		chb.RegisterFace(faces[index], data, index)
@@ -515,6 +518,7 @@ func (e *androidEngine) variantFaceFor(base int, wght int) int {
 	shell := font.NewFace(af.face.Font)
 	shell.SetVariations([]font.Variation{{Tag: ot.MustNewTag("wght"), Value: float32(wght)}})
 	i := e.addFace(shell)
+	e.faces[i].path, e.faces[i].collection = af.path, af.collection
 	if len(e.variants) >= 256 {
 		clear(e.variants)
 	}
@@ -838,9 +842,12 @@ func (e *androidEngine) glyph(f *Font, id uint32, scale, dx float32, _ Shade, _ 
 	if af == nil || af.upem <= 0 || f.Size <= 0 || scale <= 0 {
 		return bitmap{}
 	}
+	if colored, ok := e.colorGlyph(af, f, id, scale, dx); ok {
+		return colored
+	}
 	outline, ok := af.face.GlyphDataOutline(font.GID(id))
 	if !ok || len(outline.Segments) == 0 {
-		return bitmap{} // a space, or a glyph of a color font this engine does not draw
+		return bitmap{} // a space or a glyph without renderable content
 	}
 	// Font units to pixels; the outline's Y grows up, the bitmap's down.
 	s := f.Size * scale / af.upem

@@ -24,6 +24,10 @@ import android.view.Surface;
  * 不许单方面改，不是不许加 —— 加一个只在两边同时加才编得过，不会静默失配。
  */
 public final class Native {
+    static native void onServiceResult(byte[] data);
+    static native void onAudio(long token, byte[] data, byte[] error, boolean end);
+    static native void onEnvironment(byte[] data);
+    static native void onURL(byte[] data);
 
     static {
         // 库名必须逐字是 "mygo"

@@ -465,7 +465,8 @@ func Java_org_mygo_MygoIme_nativeSelectionStart(env *C.JNIEnv, thiz C.jobject) C
 // Java side anyway, because the constants are Java's.
 //
 // The order must match ReturnKey.kt on the Kotlin side:
-//   0 none, 1 done, 2 go, 3 next, 4 search, 5 send, 6 continue.
+//
+//	0 none, 1 done, 2 go, 3 next, 4 search, 5 send, 6 continue.
 //
 //export Java_org_mygo_MygoIme_nativeReturnKey
 func Java_org_mygo_MygoIme_nativeReturnKey(env *C.JNIEnv, thiz C.jobject) C.jint {
@@ -502,4 +503,19 @@ func Java_org_mygo_MygoIme_nativeSelectionEnd(env *C.JNIEnv, thiz C.jobject) C.j
 		return -1
 	}
 	return C.jint(end)
+}
+
+//export Java_org_mygo_MygoSelection_nativeAction
+func Java_org_mygo_MygoSelection_nativeAction(env *C.JNIEnv, thiz C.jobject, id C.jlong, action C.jint) {
+	theBackend.Post(func() { theBackend.SelectionAction(uint64(id), int(action)) })
+}
+
+//export Java_org_mygo_MygoSelection_nativeDrag
+func Java_org_mygo_MygoSelection_nativeDrag(env *C.JNIEnv, thiz C.jobject, id C.jlong, edge C.jint, x C.jfloat, y C.jfloat) {
+	theBackend.Post(func() { theBackend.SelectionDrag(uint64(id), int(edge), float64(x), float64(y)) })
+}
+
+//export Java_org_mygo_MygoSelection_nativeRefresh
+func Java_org_mygo_MygoSelection_nativeRefresh(env *C.JNIEnv, thiz C.jobject) {
+	theBackend.Post(func() { theBackend.RefreshSelection() })
 }

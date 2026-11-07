@@ -12,7 +12,9 @@ import (
 // can open. A socket left there by an app that ended without closing it
 // is removed; one that an app listens on, or a file that is no socket, is
 // left alone.
-func listen(path string) (net.Listener, error) {
+func listen(path string) (net.Listener, error) { return listenWith(path, listenPrivate) }
+
+func listenWith(path string, bind func(string) (net.Listener, error)) (net.Listener, error) {
 	if fi, err := os.Lstat(path); err == nil {
 		if fi.Mode().Type() != os.ModeSocket {
 			return nil, fmt.Errorf("%s exists and is not a socket", path)
@@ -25,5 +27,5 @@ func listen(path string) (net.Listener, error) {
 			return nil, err
 		}
 	}
-	return listenPrivate(path)
+	return bind(path)
 }

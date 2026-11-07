@@ -44,6 +44,15 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | `plugins/terminal` | `software_keys`、`input_context`、`ActiveCursor`、`SelectionAnchor`、`InsertNewline`、`OnSubmit`、触摸选择 |
 | `Secrets` 的 iOS/Android 后端 | `internal/ios/secrets.{go,m}`、`internal/android/backend/secrets.go` 实现上游的 `platform.Secrets` |
 
+#### Android 原生支持补齐（2026-11-08）
+
+- Android pump 改为非阻塞 FIFO，修复回调填满队列后向自身投递帧造成的自锁；补齐 Surface/EGL 恢复、启动前生命周期与深链回放，以及 Activity 重建后的去重。
+- 增加异步原生服务请求、取消与完成一次的桥接，接通权限、设备认证/PIN 回退、系统对话框、图片选择、文件保存、录音、浏览器/PDF/导出、触觉和角标。
+- 增加原生浮动编辑菜单、选区手柄、文字裁切与 UTF-16 映射；纯文本、HTML、Markdown 同时复制，Markdown 通过受限只读 FileProvider URI 供其他应用读取。
+- 补齐私有目录、Java 网络接口快照、字号/减少动效、主题系统栏、彩色 emoji 和系统本地时区初始化。共享 UI 的内置编辑器增加直接选区设置与预编辑方向处理，保持既有自定义输入客户端的兼容路径。
+- 在 API36/arm64 模拟器完成真实收发、相机/相册二维码识别、选图、录音、文件浏览/导出及选区/剪贴板验证；这不是全功能或全版本验收。FCM 推送与连续取景扫码尚未实现，API29/30 彩色字形回退未实机验证。
+- 桌面维持无 cgo；生产配置 counter-native / hello 的大小仍为 9,869,042 / 9,750,354 字节。Android 修改保留在 fork，不提交移动端代码到上游。
+
 ### B. 对上游的扩展（保留；通用的可以提交上游）
 
 | 功能 | 位置 | 备注 |
@@ -64,6 +73,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | 终端：中文标点处结束的 URL | `plugins/terminal/links.go` 的 `urlPattern`、`matchAt` | 上游 #1302 只对路径处理了 `proseDelimiters`；fork 在 `urlPattern` 里也排除它们，并在 `matchAt` 中先 `balanced`，否则 `文档（https://x.org/a），继续` 会打开 `https://x.org/a），继续` |
 | 终端：快照保留软换行和超链接目标 | `internal/vt/snapshot_links.go` | 提交 `c55486a2` |
 | `internal/probe` | 性能探针 | 主要用于 Android |
+| `automation.Start` | `plugins/automation` | 共享库宿主可在建窗前显式启用自动化；运行时 Unix socket 限于私有目录，复用现有 inspector 开关 |
 
 ### C. 等上游合并后就会消失的差异
 

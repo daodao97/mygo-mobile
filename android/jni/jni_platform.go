@@ -44,9 +44,7 @@ static jobject mygo_platform_obj = NULL;
 // nativeAttach, and every call checks its slot before using it: a Java method
 // that was renamed is then a "the platform is not attached" error, not a crash
 // inside JNI.
-static jmethodID mygo_mid_read_text = NULL;
-static jmethodID mygo_mid_read_html = NULL;
-static jmethodID mygo_mid_mimes = NULL;
+static jmethodID mygo_mid_read_clipboard = NULL;
 static jmethodID mygo_mid_write = NULL;
 static jmethodID mygo_mid_clear = NULL;
 static jmethodID mygo_mid_open = NULL;
@@ -56,6 +54,7 @@ static jmethodID mygo_mid_cancel = NULL;
 static jmethodID mygo_mid_cancel_all = NULL;
 static jmethodID mygo_mid_announce = NULL;
 static jmethodID mygo_mid_set_tree = NULL;
+static jmethodID mygo_mid_selection = NULL;
 static jmethodID mygo_mid_secret_set = NULL;
 static jmethodID mygo_mid_secret_get = NULL;
 static jmethodID mygo_mid_secret_delete = NULL;
@@ -102,7 +101,7 @@ static JNIEnv *mygo_platform_env(void) {
 // mygo_platform_ready reports whether nativeAttach has run and every method this
 // file calls was found.
 static jint mygo_platform_ready(void) {
-	if (mygo_platform_vm == NULL || mygo_platform_obj == NULL || mygo_mid_read_text == NULL) {
+	if (mygo_platform_vm == NULL || mygo_platform_obj == NULL || mygo_mid_read_clipboard == NULL) {
 		return 0;
 	}
 	return 1;
@@ -288,8 +287,6 @@ static jint mygo_platform_call_void(jmethodID mid, const char *data, int len) {
 	return 0;
 }
 
-// mygo_platform_call_two_bool calls writeClipboard(byte[] plain, byte[] html)
-// where either argument may be NULL (the representation is absent).
 // The secure store: secretSet(namespace, key, value, accessibility),
 // secretGet(namespace, key) -> byte[] or NULL, and delete. They are separate
 // wrappers rather than one shape because the return differs: two booleans, or
@@ -364,36 +361,6 @@ static jint mygo_platform_call_secret_delete(jmethodID mid, const char *ns, int 
 	}
 	return ok == JNI_TRUE ? 0 : 1;
 }
-static jint mygo_platform_call_two_bool(jmethodID mid, int has_one, const char *one, int one_len,
-	int has_two, const char *two, int two_len) {
-	JNIEnv *env = mygo_platform_env();
-	if (env == NULL || mygo_platform_obj == NULL || mid == NULL) {
-		return -1;
-	}
-	jbyteArray a = has_one ? mygo_platform_arg(env, one, one_len) : NULL;
-	jbyteArray b = has_two ? mygo_platform_arg(env, two, two_len) : NULL;
-	if ((has_one && a == NULL) || (has_two && b == NULL)) {
-		if (a != NULL) {
-			(*env)->DeleteLocalRef(env, a);
-		}
-		if (b != NULL) {
-			(*env)->DeleteLocalRef(env, b);
-		}
-		return -1;
-	}
-	jboolean ok = (*env)->CallBooleanMethod(env, mygo_platform_obj, mid, a, b);
-	if (a != NULL) {
-		(*env)->DeleteLocalRef(env, a);
-	}
-	if (b != NULL) {
-		(*env)->DeleteLocalRef(env, b);
-	}
-	if (mygo_platform_exception(env)) {
-		return -1;
-	}
-	return ok == JNI_TRUE ? 1 : 0;
-}
-
 // mygo_platform_call_notify calls
 // postNotification(byte[] id, byte[] title, byte[] body, boolean silent).
 static jint mygo_platform_call_notify(const char *id, int id_len, const char *title, int title_len,
@@ -456,10 +423,8 @@ static jint mygo_platform_attach(JNIEnv *env, jobject thiz) {
 		const char *sig;
 		jmethodID *slot;
 	} lookups[] = {
-		{"readClipboardText", "()[B", &mygo_mid_read_text},
-		{"readClipboardHtml", "()[B", &mygo_mid_read_html},
-		{"clipboardMimeTypes", "()[B", &mygo_mid_mimes},
-		{"writeClipboard", "([B[B)Z", &mygo_mid_write},
+		{"readClipboardJSON", "()[B", &mygo_mid_read_clipboard},
+		{"writeClipboardJSON", "([B)Z", &mygo_mid_write},
 		{"clearClipboard", "()Z", &mygo_mid_clear},
 		{"openExternalUrl", "([B)I", &mygo_mid_open},
 		{"notificationsAllowed", "()Z", &mygo_mid_notify_allowed},
@@ -468,12 +433,13 @@ static jint mygo_platform_attach(JNIEnv *env, jobject thiz) {
 		{"cancelAllNotifications", "()Z", &mygo_mid_cancel_all},
 		{"announce", "([B)V", &mygo_mid_announce},
 		{"setAccessibilityTree", "([B)V", &mygo_mid_set_tree},
+		{"updateTextSelection", "([B)V", &mygo_mid_selection},
 		{"secretSet", "([B[B[BI)Z", &mygo_mid_secret_set},
 		{"secretGet", "([B[B)[B", &mygo_mid_secret_get},
 		{"secretDelete", "([B[B)Z", &mygo_mid_secret_delete},
 		{"startScan", "(J[B)Z", &mygo_mid_scan},
 		{"cancelScan", "(J)Z", &mygo_mid_scan_cancel},
-		{"takeScanResult", "()Ljava/lang/String;", &mygo_mid_take_scan},
+		{"takeScanResult", "()[B", &mygo_mid_take_scan},
 		{"exitApp", "()V", &mygo_mid_exit},
 	};
 	int count = (int)(sizeof(lookups) / sizeof(lookups[0]));
@@ -492,12 +458,8 @@ static jint mygo_platform_attach(JNIEnv *env, jobject thiz) {
 // The wrappers the Go side calls. Each one returns -1 when the platform is not
 // attached, so that the Go side can tell "Java said no" from "there is no Java
 // side to ask".
-static char *mygo_platform_read_text(int *out_len) { return mygo_platform_call_bytes(mygo_mid_read_text, out_len); }
-static char *mygo_platform_read_html(int *out_len) { return mygo_platform_call_bytes(mygo_mid_read_html, out_len); }
-static char *mygo_platform_mimes(int *out_len) { return mygo_platform_call_bytes(mygo_mid_mimes, out_len); }
-static jint mygo_platform_write(int has_plain, const char *plain, int plain_len, int has_html, const char *html, int html_len) {
-	return mygo_platform_call_two_bool(mygo_mid_write, has_plain, plain, plain_len, has_html, html, html_len);
-}
+static char *mygo_platform_read_clipboard(int *out_len) { return mygo_platform_call_bytes(mygo_mid_read_clipboard, out_len); }
+static jint mygo_platform_write(const char *data, int len) { return mygo_platform_call_bool(mygo_mid_write, data, len); }
 static jint mygo_platform_clear(void) {
 	return mygo_platform_call_bool(mygo_mid_clear, NULL, 0);
 }
@@ -532,6 +494,7 @@ static jint mygo_platform_cancel_all(void) {
 static jint mygo_platform_announce(const char *text, int text_len) {
 	return mygo_platform_call_void(mygo_mid_announce, text, text_len);
 }
+static jint mygo_platform_selection(const char *json, int n) { return mygo_platform_call_void(mygo_mid_selection,json,n); }
 static jint mygo_platform_set_tree(const char *json, int json_len) {
 	return mygo_platform_call_void(mygo_mid_set_tree, json, json_len);
 }
@@ -565,25 +528,15 @@ static jint mygo_platform_scan(jlong token, const char *prompt, int prompt_len) 
 // mygo_platform_take_scan_result asks the Java side for the pending scan
 // result and copies it out as a malloc'd C string. It returns NULL when there
 // is nothing to report; *code is then untouched.
-static const char *mygo_platform_take_scan_result(void) {
-	JNIEnv *env = mygo_platform_env();
-	if (env == NULL || mygo_platform_obj == NULL || mygo_mid_take_scan == NULL) {
-		return NULL;
-	}
-	jstring js = (jstring)(*env)->CallObjectMethod(env, mygo_platform_obj, mygo_mid_take_scan);
-	if (mygo_platform_exception(env) || js == NULL) {
-		return NULL;
-	}
-	const char *utf = (*env)->GetStringUTFChars(env, js, NULL);
-	if (utf == NULL) {
-		(*env)->DeleteLocalRef(env, js);
-		return NULL;
-	}
-	char *out = strdup(utf);
-	(*env)->ReleaseStringUTFChars(env, js, utf);
-	(*env)->DeleteLocalRef(env, js);
-	// 编码格式："<code>\n<token>\n<text>"，三样一次带走。
-	return out;
+static char *mygo_platform_take_scan_result(int *len) {
+ *len=0;
+ JNIEnv *env = mygo_platform_env();
+ if (env == NULL || mygo_platform_obj == NULL || mygo_mid_take_scan == NULL) return NULL;
+ jbyteArray data = (jbyteArray)(*env)->CallObjectMethod(env, mygo_platform_obj, mygo_mid_take_scan);
+ if (mygo_platform_exception(env) || data == NULL) return NULL;
+ char *out = mygo_platform_grab(env, data, len);
+ (*env)->DeleteLocalRef(env, data);
+ return out;
 }
 
 static jint mygo_platform_scan_cancel(jlong token) {
@@ -601,6 +554,7 @@ static jint mygo_platform_scan_cancel(jlong token) {
 import "C"
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"strconv"
@@ -621,6 +575,11 @@ import (
 // silence, which is a failure with no explanation.
 func init() {
 	backend.SetPlatformBridge(androidJNI{})
+	backend.NativeSelectionUpdate = func(data []byte) {
+		c := C.CBytes(data)
+		defer C.free(c)
+		C.mygo_platform_selection((*C.char)(c), C.int(len(data)))
+	}
 }
 
 // androidJNI is the Android implementation of backend.PlatformBridge: every
@@ -641,43 +600,56 @@ func (androidJNI) ClipboardRead() (backend.ClipboardPayload, []string, error) {
 	if !attached() {
 		return backend.ClipboardPayload{}, nil, backend.ErrPlatformBridge
 	}
-	var p backend.ClipboardPayload
 	var n C.int
-	if s, ok := takeJavaBytes(C.mygo_platform_read_text(&n), n); ok {
-		p.Plain, p.HasPlain = s, true
-	}
-	if s, ok := takeJavaBytes(C.mygo_platform_read_html(&n), n); ok {
-		p.HTML, p.HasHTML = s, true
-	}
-	mimes, ok := takeJavaBytes(C.mygo_platform_mimes(&n), n)
+	raw, ok := takeJavaBytes(C.mygo_platform_read_clipboard(&n), n)
 	if !ok {
-		return p, nil, nil
+		return backend.ClipboardPayload{}, nil, errClipboardRead
 	}
-	// One MIME type per line: the Java side joins them because a MIME type
-	// cannot contain a newline, and a byte[] of lines keeps this side of the
-	// JNI to one shape (see mygo_platform_bytes).
-	var out []string
-	for _, line := range strings.Split(mimes, "\n") {
-		if line != "" {
-			out = append(out, line)
-		}
+	var value struct {
+		Plain    *string  `json:"plain"`
+		HTML     *string  `json:"html"`
+		Markdown *string  `json:"markdown"`
+		Mimes    []string `json:"mimes"`
 	}
-	return p, out, nil
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return backend.ClipboardPayload{}, nil, err
+	}
+	var p backend.ClipboardPayload
+	if value.Plain != nil {
+		p.Plain, p.HasPlain = *value.Plain, true
+	}
+	if value.HTML != nil {
+		p.HTML, p.HasHTML = *value.HTML, true
+	}
+	if value.Markdown != nil {
+		p.Markdown, p.HasMarkdown = *value.Markdown, true
+	}
+	return p, value.Mimes, nil
 }
 
-// ClipboardWrite replaces the clipboard with the given representations.
+// ClipboardWrite replaces all representations in one native clipboard operation.
 func (androidJNI) ClipboardWrite(p backend.ClipboardPayload) error {
 	if !attached() {
 		return backend.ErrPlatformBridge
 	}
-	plain, plainLen := cBytes(p.Plain)
-	defer cFree(plain)
-	html, htmlLen := cBytes(p.HTML)
-	defer cFree(html)
-	rc := C.mygo_platform_write(
-		boolToC(p.HasPlain), plain, plainLen,
-		boolToC(p.HasHTML), html, htmlLen)
-	if rc != 0 {
+	value := map[string]string{}
+	if p.HasPlain {
+		value["plain"] = p.Plain
+	}
+	if p.HasHTML {
+		value["html"] = p.HTML
+	}
+	if p.HasMarkdown {
+		value["markdown"] = p.Markdown
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	ptr, n := cBytes(string(data))
+	defer cFree(ptr)
+	// call_bool returns 1 on Java true, 0 on false, and -1 on a JNI failure.
+	if C.mygo_platform_write(ptr, n) != 1 {
 		return errClipboardWrite
 	}
 	return nil
@@ -688,10 +660,14 @@ func (androidJNI) ClipboardClear() error {
 	if !attached() {
 		return backend.ErrPlatformBridge
 	}
-	if C.mygo_platform_clear() < 0 {
+	switch C.mygo_platform_clear() {
+	case -1:
 		return backend.ErrPlatformBridge
+	case 1:
+		return nil
+	default:
+		return errClipboardClear
 	}
-	return nil
 }
 
 // OpenExternalURL hands the URL to the system.
@@ -871,27 +847,27 @@ func (androidJNI) ScanCode(token uint64, prompt string) error {
 	case -1:
 		return backend.ErrPlatformBridge
 	case 0:
-		go collectScanResults()
+		go collectScanResults(token)
 		return nil
 	}
 	return backend.ErrScanUnavailable
 }
 
-// collectScanResults polls the Java side until it hands over an answer.
-//
-// The bridge is one-way — Go calls Java through jmethodID, and nothing on the
-// Java side calls back into Go — so a scan cannot arrive as a JNI entry point.
-// Polling is the shape that fits: the wait is a person holding a camera or
-// picking a photo (seconds), and one getString every 150ms costs nothing.
-// It stops as soon as an answer is taken, or after a minute, which is longer
-// than anyone leaves a camera up.
-func collectScanResults() {
+// collectScanResults drains native replies until this scan finishes. The
+// public Scanner context owns its lifetime; there is no independent deadline
+// that could complete Go while a native permission/camera continuation lives.
+func collectScanResults(wanted uint64) {
 	const interval = 150 * time.Millisecond
-	deadline := time.Now().Add(time.Minute)
-	for time.Now().Before(deadline) {
-		if code, token, text, ok := takeScanResult(); ok {
-			backend.ScanResult(token, text, code)
-			return
+	for backend.ScanPending(wanted) {
+		for {
+			code, token, text, ok := takeScanResult()
+			if !ok {
+				break
+			}
+			theBackend.Post(func() { backend.ScanResult(token, text, code) })
+			if token == wanted {
+				return
+			}
 		}
 		time.Sleep(interval)
 	}
@@ -901,12 +877,13 @@ func collectScanResults() {
 // The encoding is "<code>\n<token>\n<text>": code first so a malformed tail
 // still says whether the scan failed as canceled or as a decode miss.
 func takeScanResult() (code int32, token uint64, text string, ok bool) {
-	raw := C.mygo_platform_take_scan_result()
+	var size C.int
+	raw := C.mygo_platform_take_scan_result(&size)
 	if raw == nil {
 		return 0, 0, "", false
 	}
 	defer C.free(unsafe.Pointer(raw))
-	parts := strings.SplitN(C.GoString(raw), "\n", 3)
+	parts := strings.SplitN(string(C.GoBytes(unsafe.Pointer(raw), size)), "\n", 3)
 	if len(parts) < 2 {
 		return 0, 0, "", false
 	}
@@ -950,6 +927,8 @@ func accessibilityCode(s string) int {
 // The errors this file adds. None of them is platform.ErrNotificationsDenied,
 // which says the user said no: these say the call or the platform failed.
 var (
+	errClipboardClear   = errors.New("mygo: Android refused to clear the clipboard")
+	errClipboardRead    = errors.New("mygo: Android clipboard read failed")
 	errClipboardWrite   = errors.New("mygo: Android refused the clipboard write")
 	errNoActivity       = errors.New("mygo: no app on this device handles that URL")
 	errNilNotification  = errors.New("mygo: nil notification")

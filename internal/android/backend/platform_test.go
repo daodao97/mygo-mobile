@@ -383,7 +383,7 @@ func boolToInt(b bool) int {
 }
 
 func TestPlatformClipboardFormats(t *testing.T) {
-	install(t, &fakeBridge{mimes: []string{"text/plain; charset=utf-8", "image/png", "TEXT/HTML"}})
+	install(t, &fakeBridge{payload: ClipboardPayload{HasPlain: true, HasHTML: true}, mimes: []string{"text/plain; charset=utf-8", "image/png", "TEXT/HTML"}})
 	c := androidClipboard{}
 	if got, want := c.Formats(), []transfer.Format{transfer.Text, transfer.HTML}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Formats() = %v, want %v", got, want)
@@ -912,5 +912,57 @@ func TestPlatformValidateExternalURLKeepsTheString(t *testing.T) {
 	}
 	if !strings.Contains(got, "%2F") {
 		t.Fatalf("the escape was rewritten: %q", got)
+	}
+}
+
+func TestClipboardMarkdownPreservesDistinctRepresentations(t *testing.T) {
+	f := &fakeBridge{}
+	install(t, f)
+	c := androidClipboard{}
+	values := map[transfer.Format]string{transfer.Text: "中文 emoji 👩🏽‍💻\x00", transfer.HTML: "<b>中文 emoji 👩🏽‍💻</b>", transfer.Markdown: "**中文 emoji 👩🏽‍💻**\x00"}
+	var reps []transfer.Representation
+	for _, format := range []transfer.Format{transfer.Text, transfer.HTML, transfer.Markdown} {
+		reps = append(reps, transfer.Bytes(format, []byte(values[format])))
+	}
+	released := false
+	if err := c.WriteData(transfer.New(transfer.NewItem(reps...)), func() { released = true }); err != nil || !released {
+		t.Fatalf("write: %v, released %v", err, released)
+	}
+	f.payload = f.writes[0]
+	f.mimes = []string{"text/plain", "text/html", "text/markdown"}
+	got, err := c.ReadData(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for format, want := range values {
+		b, err := got.Read(format)
+		if err != nil || string(b) != want {
+			t.Fatalf("%v = %q, %v", format, b, err)
+		}
+	}
+	f.payload.HasMarkdown = false
+	if _, err := c.ReadData([]transfer.Format{transfer.Markdown}); !errors.Is(err, transfer.ErrFormat) {
+		t.Fatalf("unreadable Markdown: %v", err)
+	}
+}
+
+func TestClipboardEmptyMarkdownIsPresent(t *testing.T) {
+	f := &fakeBridge{}
+	install(t, f)
+	c := androidClipboard{}
+	if err := c.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.Markdown, []byte{}))), nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.writes) != 1 || !f.writes[0].HasMarkdown || f.writes[0].HasPlain {
+		t.Fatalf("empty Markdown lost: %+v", f.writes)
+	}
+	f.payload = f.writes[0]
+	f.mimes = []string{"text/markdown"}
+	d, err := c.ReadData(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := d.Read(transfer.Markdown); err != nil || len(b) != 0 {
+		t.Fatalf("empty Markdown: %q %v", b, err)
 	}
 }

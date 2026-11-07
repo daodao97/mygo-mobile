@@ -5,7 +5,9 @@ package automation
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -13,24 +15,43 @@ import (
 	"github.com/egoist/mygo/internal/surface"
 )
 
-// init listens on the socket MYGO_AUTOMATION names, if any, before any
-// window opens, so that the content of every window of native UI comes to
-// the plugin as it attaches.
-func init() {
-	path := os.Getenv("MYGO_AUTOMATION")
-	if path == "" {
-		return
+var startMu sync.Mutex
+var started bool
+
+// Start enables UI automation before opening windows, including shared-library
+// mobile hosts. On Unix its socket must be inside a private user directory;
+// this avoids a process-wide umask change while the app is running.
+func Start(path string) error { return start(path, listenRuntime) }
+
+func start(path string, listenFn func(string) (net.Listener, error)) error {
+	startMu.Lock()
+	defer startMu.Unlock()
+	if started {
+		return errors.New("mygo: automation already started")
 	}
-	l, err := listen(path)
+	if path == "" {
+		return errors.New("mygo: automation needs a socket path")
+	}
+	l, err := listenFn(path)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "mygo: automation:", err)
-		return
+		return err
 	}
 	a := &app{ready: make(chan struct{}), targets: map[*mygo.Window]target{}}
 	surface.Automate = a.attached
 	mygo.App.WhenReady(func() { close(a.ready) })
 	mygo.App.OnQuit(func() { l.Close() })
 	go serve(l, a)
+	started = true
+	return nil
+}
+func init() {
+	path := os.Getenv("MYGO_AUTOMATION")
+	if path == "" {
+		return
+	}
+	if err := start(path, listen); err != nil {
+		fmt.Fprintln(os.Stderr, "mygo: automation:", err)
+	}
 }
 
 // app drives the running app's windows.

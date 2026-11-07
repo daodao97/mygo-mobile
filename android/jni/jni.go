@@ -76,7 +76,6 @@ func Java_org_mygo_Native_nativeOnSurfaceCreated(env *C.JNIEnv, clazz C.jclass, 
 	// %p, not %v: cgo types an opaque C struct as struct{}, so %v prints
 	// "&{{{}}}" and the pointer value -- the one useful part -- is lost.
 	androidLog("onSurfaceCreated window=%p", window)
-	startApp()
 	theBackend.OnSurfaceCreated(unsafe.Pointer(window))
 }
 
@@ -88,6 +87,7 @@ func Java_org_mygo_Native_nativeOnSurfaceCreated(env *C.JNIEnv, clazz C.jclass, 
 func Java_org_mygo_Native_nativeOnSurfaceChanged(env *C.JNIEnv, clazz C.jclass, w, h, dpi C.jint) {
 	androidLog("onSurfaceChanged %dx%d dpi=%d", int(w), int(h), int(dpi))
 	theBackend.OnSurfaceChanged(int(w), int(h), int(dpi))
+	theBackend.Post(startApp)
 }
 
 // Java_org_mygo_Native_nativeOnSurfaceDestroyed is

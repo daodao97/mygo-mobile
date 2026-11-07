@@ -30,6 +30,8 @@ go install github.com/egoist/mygo/plugins/automation/cmd/mygo-automation
 mygo-automation skills
 ```
 
-It listens only when `MYGO_AUTOMATION` is set, and builds without the
+It listens when `MYGO_AUTOMATION` is set or `automation.Start(path)` is called
+before opening windows. Runtime Start requires a private user directory on Unix.
+Builds without the
 inspector (`-tags mygo_noinspector`, the release builds of `mygo build`)
 leave it out. See [the documentation](../../docs/plugins/automation.md).

@@ -137,16 +137,16 @@ type PlatformBridge interface {
 }
 
 // ClipboardPayload is what Android's clipboard holds of what this backend can
-// decode: the plain text of one item and its HTML markup, each with a flag
+// decode: the plain text, HTML and Markdown of one item, each with a flag
 // saying whether it is there, because an empty string is a value a user can
 // copy and "there is no text" is not the same thing.
 type ClipboardPayload struct {
-	Plain, HTML       string
-	HasPlain, HasHTML bool
+	Plain, HTML, Markdown          string
+	HasPlain, HasHTML, HasMarkdown bool
 }
 
 // empty reports whether the payload holds nothing at all.
-func (p ClipboardPayload) empty() bool { return !p.HasPlain && !p.HasHTML }
+func (p ClipboardPayload) empty() bool { return !p.HasPlain && !p.HasHTML && !p.HasMarkdown }
 
 // bridgeMu guards the installed bridge. The bridge is installed once, at
 // startup, before the app can call anything (internal/android's init), and read
@@ -217,11 +217,11 @@ type androidClipboard struct{}
 // wrong — which is also what a background app sees when the platform refuses
 // the read (see the type's note).
 func (androidClipboard) Formats() []transfer.Format {
-	_, mimes, err := readClipboard()
+	p, mimes, err := readClipboard()
 	if err != nil {
 		return nil
 	}
-	return readableFormats(mimes)
+	return p.readableFormats(mimes)
 }
 
 // AvailableFormats lists the clipboard's representations as the platform names
@@ -243,7 +243,7 @@ func (androidClipboard) ReadData(formats []transfer.Format) (transfer.Data, erro
 	if err != nil {
 		return transfer.Data{}, err
 	}
-	offered := readableFormats(mimes)
+	offered := p.readableFormats(mimes)
 	if len(formats) == 0 {
 		formats = offered
 	}
@@ -257,6 +257,8 @@ func (androidClipboard) ReadData(formats []transfer.Format) (transfer.Data, erro
 			reps = append(reps, transfer.Bytes(transfer.Text, []byte(p.Plain)))
 		case transfer.HTML:
 			reps = append(reps, transfer.Bytes(transfer.HTML, []byte(p.HTML)))
+		case transfer.Markdown:
+			reps = append(reps, transfer.Bytes(transfer.Markdown, []byte(p.Markdown)))
 		}
 	}
 	if len(reps) == 0 {
@@ -274,7 +276,7 @@ func (androidClipboard) ReadData(formats []transfer.Format) (transfer.Data, erro
 // WriteData puts data on the clipboard.
 //
 // The clipboard holds one item, so this writes the first item that offers text
-// or HTML and drops the rest — including a second item's representations, or
+// or HTML or Markdown and drops the rest — including a second item's representations, or
 // an image's bytes, which this backend cannot put on the clipboard at all (it
 // reports ErrUnsupported instead of writing a clip the reader cannot decode).
 //
@@ -392,7 +394,8 @@ func payloadFromData(data transfer.Data) (p ClipboardPayload, ok bool) {
 	for _, item := range data.Items() {
 		formats := item.Formats()
 		hasText, hasHTML := contains(formats, transfer.Text), contains(formats, transfer.HTML)
-		if !hasText && !hasHTML {
+		hasMarkdown := contains(formats, transfer.Markdown)
+		if !hasText && !hasHTML && !hasMarkdown {
 			continue
 		}
 		if hasText {
@@ -405,6 +408,11 @@ func payloadFromData(data transfer.Data) (p ClipboardPayload, ok bool) {
 				p.HTML, p.HasHTML = string(b), true
 			}
 		}
+		if hasMarkdown {
+			if b, err := item.Read(transfer.Markdown); err == nil {
+				p.Markdown, p.HasMarkdown = string(b), true
+			}
+		}
 		return p, !p.empty()
 	}
 	return ClipboardPayload{}, false
@@ -413,6 +421,18 @@ func payloadFromData(data transfer.Data) (p ClipboardPayload, ok bool) {
 // readableFormats maps the MIME types a clip advertises to the transfer formats
 // this backend can decode, dropping what it cannot — see androidMIME for the
 // two it can.
+// Do not promise a representation that the native reader could not retrieve
+// (for example a third-party content URI with no immediate text representation).
+func (p ClipboardPayload) readableFormats(mimes []string) []transfer.Format {
+	var formats []transfer.Format
+	for _, f := range readableFormats(mimes) {
+		if f == transfer.Text && p.HasPlain || f == transfer.HTML && p.HasHTML || f == transfer.Markdown && p.HasMarkdown {
+			formats = append(formats, f)
+		}
+	}
+	return formats
+}
+
 func readableFormats(mimes []string) []transfer.Format {
 	var out []transfer.Format
 	for _, mime := range mimes {
@@ -426,8 +446,8 @@ func readableFormats(mimes []string) []transfer.Format {
 }
 
 // androidMIME maps a transfer format to the MIME type Android's clipboard names
-// it by. The two representations a clip can hold that this backend decodes are
-// text/plain and text/html; everything else is not available (see
+// it by. The textual representations this backend decodes are
+// text/plain, text/html and text/markdown; everything else is not available (see
 // androidClipboard).
 func androidMIME(f transfer.Format) (string, bool) {
 	switch f {
@@ -435,6 +455,8 @@ func androidMIME(f transfer.Format) (string, bool) {
 		return "text/plain", true
 	case transfer.HTML:
 		return "text/html", true
+	case transfer.Markdown:
+		return "text/markdown", true
 	}
 	return "", false
 }
@@ -453,6 +475,8 @@ func formatForMIME(mime string) (transfer.Format, bool) {
 		return transfer.Text, true
 	case "text/html":
 		return transfer.HTML, true
+	case "text/markdown", "text/x-markdown":
+		return transfer.Markdown, true
 	}
 	return "", false
 }

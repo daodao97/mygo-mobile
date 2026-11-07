@@ -65,6 +65,7 @@ func (b *Backend) postFrame() {
 		// backgrounded, which is exactly the symptom this fixes.
 		b.makeCurrentForFrame()
 		b.deliver(platform.SurfaceEvent{Kind: platform.SurfaceFrame})
+		b.publishSelection()
 	})
 }
 

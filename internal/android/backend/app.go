@@ -53,12 +53,16 @@ import (
 type Backend struct {
 	*unsupported.Backend
 
-	mu sync.Mutex
-	h  platform.AppHandler
+	mu             sync.Mutex
+	h              platform.AppHandler
+	lifecycleKind  int
+	lifecycleKnown bool
+	preferences    platform.Preferences
+	urls           []string
 
 	// tasks carries work to the pump goroutine. It is buffered so the
 	// //export functions, which run on Java's threads, rarely block.
-	tasks chan func()
+	tasks *workQueue
 
 	// started is true once a pump goroutine exists; running, while it is
 	// inside its loop.
@@ -132,7 +136,7 @@ func New() *Backend {
 	once.Do(func() {
 		the = &Backend{
 			Backend: unsupported.New(),
-			tasks:   make(chan func(), 64),
+			tasks:   newWorkQueue(),
 			quit:    make(chan struct{}),
 			wake:    make(chan struct{}, 1),
 		}
@@ -250,8 +254,16 @@ func (b *Backend) pump() error {
 	}()
 	for {
 		select {
-		case fn := <-b.tasks:
+		case <-b.quit:
+			return nil
+		default:
+		}
+		if fn := b.tasks.pop(); fn != nil {
 			fn()
+			continue
+		}
+		select {
+		case <-b.tasks.ready:
 		case <-b.quit:
 			return nil
 		}
@@ -267,9 +279,11 @@ func (b *Backend) Post(fn func()) {
 		go b.pump()
 	}
 	select {
-	case b.tasks <- fn:
 	case <-b.quit:
+		return
+	default:
 	}
+	b.tasks.push(fn)
 }
 
 // Quit makes Run return, as platform.Backend asks. Releasing the EGL state
@@ -316,13 +330,15 @@ func (b *Backend) Signal() {
 // producing a value gets to run while the main thread waits. Main thread
 // only.
 func (b *Backend) Step() {
-	select {
-	case fn := <-b.tasks:
+	if fn := b.tasks.pop(); fn != nil {
 		fn()
 		return
-	default:
 	}
 	select {
+	case <-b.tasks.ready:
+		if fn := b.tasks.pop(); fn != nil {
+			fn()
+		}
 	case <-b.wake:
 	case <-b.quit:
 	}
@@ -345,11 +361,22 @@ func (b *Backend) handler() platform.AppHandler {
 
 // markReady fires AppHandler.Ready once, on the pump.
 func (b *Backend) markReady() {
+	if b.handler() == nil || b.surface == nil || b.surface.window == nil || b.surface.width <= 0 || b.surface.height <= 0 {
+		return
+	}
 	if !b.readyFired.CompareAndSwap(false, true) {
 		return
 	}
 	if h := b.handler(); h != nil {
 		h.Ready()
+		if b.lifecycleKnown {
+			b.lifecycle(b.lifecycleKind)
+		}
+		if len(b.urls) > 0 {
+			urls := b.urls
+			b.urls = nil
+			h.OpenURLs(urls)
+		}
 	}
 }
 
@@ -522,6 +549,9 @@ func (b *Backend) surfaceChanged(w, h, dpi int) {
 		if err := b.egl.createWindow(b.surface.window); err != nil {
 			b.mu.Unlock()
 			log.Printf("mygo/android: egl: %v", err)
+			// Readiness needs a sized native window, not a successful first EGL
+			// allocation. The app's first frame retries EGL in makeCurrentForFrame.
+			b.markReady()
 			return
 		}
 	}
@@ -541,6 +571,7 @@ func (b *Backend) surfaceChanged(w, h, dpi int) {
 		b.deliver(platform.SurfaceEvent{Kind: platform.SurfaceRenew})
 	}
 	b.resized(w, h)
+	b.markReady()
 }
 
 // sizeChanged (pump) is surfaceChanged without a density.
@@ -553,6 +584,7 @@ func (b *Backend) sizeChanged(w, h int) {
 	b.surface.width, b.surface.height = w, h
 	b.mu.Unlock()
 	b.resized(w, h)
+	b.markReady()
 }
 
 // resized (pump) shows a surface at its new size.

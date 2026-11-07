@@ -352,6 +352,11 @@ class MygoView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         return MygoImeConnection(this)
     }
 
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) MygoSelection.nativeRefresh()
+    }
+
     /** 由 Activity 在 setContentView 之后调用，确保能收到按键事件。 */
     fun grabInputFocus() {
         requestFocus()
