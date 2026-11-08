@@ -83,7 +83,12 @@ type ListState struct {
 	// End do while the list has the keyboard focus, and Page Up and Page
 	// Down on Linux and Windows: *Selected is the chosen row, -1 for none,
 	// which shows in the accent color. The list's Changed reports a new
-	// choice, and its Submitted a double click or Enter.
+	// choice, and its Submitted a double click or Enter. With a Key, the
+	// choice follows its item as rows come and go, and becomes -1 when the
+	// item is no longer among the rows: the list writes that as it builds,
+	// so what the app builds after the list in the same pass reads -1. An
+	// app that shows another set of rows in the same list can start it
+	// afresh (list = ListState{}), which forgets the item chosen before.
 	Selected *int
 	// Selection, when set, lets the user choose several rows, which it
 	// holds by their keys: a click chooses one, Cmd-click (Ctrl-click on
@@ -461,10 +466,11 @@ type listRow struct {
 }
 
 // rowBuild is the row of a list being built, for what is inside it: its
-// list, index and key, whether it was chosen before a click on it in this
-// frame, and whether it was double-clicked.
+// list, element, index and key, whether it was chosen before a click on it
+// in this frame, and whether it was double-clicked.
 type rowBuild struct {
 	f                       *listFrame
+	e                       *node
 	i                       int
 	key                     any
 	clicked, chosen, double bool
@@ -745,7 +751,7 @@ func (f *listFrame) build(i int) *node {
 		d.on, w.st.clicks, w.st.doubleClicks = false, 0, 0
 	}
 	prev := f.rb
-	f.rb = rowBuild{f: f, i: i, key: key, clicked: w.st.clicks > 0 && w.st.clickMods == 0, double: w.st.doubleClicks > 0}
+	f.rb = rowBuild{f: f, e: w, i: i, key: key, clicked: w.st.clicks > 0 && w.st.clickMods == 0, double: w.st.doubleClicks > 0}
 	rb := &f.rb
 	if sel := s.cursor(); sel != nil && !f.isHeader(i) {
 		t := c.theme

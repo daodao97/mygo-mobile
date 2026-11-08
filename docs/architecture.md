@@ -160,7 +160,9 @@ a GUI dependency. See [APNs push](push.md#manage-live-activity-subscriptions).
 ├── transfer/           immutable data items, representations, lazy providers and drag effects
 ├── netproxy/           the proxy of the system's settings, for Go's HTTP clients
 ├── audio/              sound: players, the mixer, the output of each platform, WAV;
-│                       audio/vorbis and audio/mp3 decode Ogg Vorbis and MP3
+│                       audio/vorbis and audio/mp3 decode Ogg Vorbis and MP3,
+│                       audio/mp4 MP4 (fragmented too) with ALAC, audio/aac
+│                       AAC, audio/flac FLAC
 ├── cmd/mygo/           the CLI: init, generate, dev, build, doctor
 ├── examples/           hello, todo, frameless, native; counter-native, vibrancy,
 │                       effort-slider, flyout, menubar-flyout, piano, farm
@@ -1764,7 +1766,12 @@ DirectWrite's locale of text formats and of ranges
 (`IDWriteTextLayout::SetLocaleName`), Pango's language attributes. Han
 characters in a language that does not write them get the engine's own
 choice (`langRuns`), as Chromium's `LocaleForHan` does; Core Text does so
-by itself.
+by itself. DirectWrite's choice goes by the locale of the user's regional
+formats (`GetUserDefaultLocaleName`), whose fallback for English mixes Yu
+Gothic UI and Microsoft JhengHei UI in one Chinese text: where that locale
+writes no Han characters, they take the first of the user's preferred
+languages that does (`userHanRuns`, `userHanLanguage`), read once with
+`GetUserPreferredUILanguages`.
 
 WebView2's environment takes the language through
 `ICoreWebView2EnvironmentOptions`, a COM object of ours
@@ -2465,7 +2472,17 @@ Where `openDevice` fails, a null device takes the frames on the wall
 clock and fails after two seconds, so the output tries the device again;
 `audio.Err` reports the failure. Formats register a magic prefix and a
 constructor as `image` does: WAV is built in, `audio/vorbis` and
-`audio/mp3` wrap pure Go decoders.
+`audio/mp3` wrap pure Go decoders, and so do `audio/aac` and `audio/flac`.
+A file that starts with an ID3 tag is matched by what follows it.
+`audio/mp4` reads the container and leaves its packets to a codec
+registered by the sample entry's type (`mp4.RegisterCodec`): ALAC, an
+in-package port of Apple's decoder, `mp4a` from `audio/aac`, `fLaC` from
+`audio/flac`, so that the LGPL of go-aac stays with the apps that import
+`audio/aac`. It places packets from the sample table, or, of a fragmented
+file, from each `moof`'s `trun` as playing reaches it, with the length
+from the `sidx`; AAC's packets it places 1024 frames apart whatever their
+durations say, since that is what each decodes to, and a seek decodes one
+packet before the one it lands in, whose sound overlaps it.
 
 ## Watching files (`watch.go`)
 
@@ -4675,10 +4692,14 @@ either.
   `languageShapes` leaves the attribute out where it changes nothing. A
   number, new in each frame on a dashboard, is put together from the glyphs
   and kerning of its characters, measured once for each font and checked
-  against Core Text from time to time (`numbers_darwin.go`). Latin text
-  kept across widths is shaped into one line that its lines take their glyphs
-  from, breaking at the spaces before plain words and asking Core Text for
-  every other break, checked in the same way (`wrap_darwin.go`). Korean text
+  against Core Text or DirectWrite from time to time (`numbers.go`). Latin
+  text kept across widths is shaped into one line that its lines take their
+  glyphs from, breaking at the spaces before plain words, checked in the same
+  way (`wrap.go`): Core Text is asked for every other break, and DirectWrite,
+  which shapes a whole text before breaking it, lays out a text with any other
+  break, keeping the one line 8 frames after the last, or as windows go idle,
+  and drawing the spaces ending a line as a run of their own, as DirectWrite
+  does. Korean text
   breaks between words, as CSS's `word-break: keep-all` (`keepWordsWhole`
   takes the breaks between two letters or digits out of Unicode's): Core Text
   moves the break it suggests back to the last one left in the line; Pango
@@ -6250,7 +6271,9 @@ which npm allows only for packages that exist: the first release uses an
 | network status | `nw_path_monitor` on a queue of its own, the first `Status` waiting (up to a second) for its first path; online when the path is satisfied, metered when it is expensive or constrained | `GNetworkMonitor`, `network-available` (a default route) and `network-metered` | `GetNetworkConnectivityHint`, `NotifyNetworkConnectivityHintChange`; online from local access up (not none or hidden), metered for a fixed or variable cost, roaming, over or near the data limit |
 | window position | honored | ignored by Wayland compositors | honored |
 | resize borders without a title bar | the window's own | the outer 5 px of the page | invisible, outside the window; along the top of a frameless window or a hidden title bar, a child window |
-| content protection, click-through | yes | ignored | yes |
+| content protection | yes | ignored | yes |
+| click-through (`SetIgnoreMouseEvents`) | `ignoresMouseEvents` | an empty input shape | layered, `WS_EX_TRANSPARENT` |
+| input region (`SetInputRegion`) | `ignoresMouseEvents` switched as the pointer comes into the region or leaves it, from a global and a local monitor of its moves and releases, while a window has one, and a tracking area active always (`input_region.go`) | the input shape, after GTK's own, on size-allocate (`gdk_window_input_shape_combine_region`) | layered, `WS_EX_TRANSPARENT` switched as a timer at each tick of the system's clock (15.6 ms) finds the cursor in the region or out of it (`input_region.go`) |
 | panels | `NSPanel` with the nonactivating style, floating, on all Spaces as a full-screen auxiliary | sticky utility window, kept above, out of the taskbar and the pager; a gtk-layer-shell overlay surface on Wayland where it can be | topmost `WS_EX_TOOLWINDOW` owned by the hidden application window, rounded |
 | flyouts | borderless nonactivating `NSPanel` child window, or an `NSPopover`; placed in the visible frame | `GTK_WINDOW_POPUP` (override-redirect, placed in the work area, on X11; `xdg_popup` with `gdk_window_move_to_rect` on Wayland); focusable ones grab the seat | owned `WS_POPUP` + `WS_EX_TOOLWINDOW`, `WS_EX_NOACTIVATE` unless focusable, `CS_DROPSHADOW` for a shadow, with corners rounded by DWM on Windows 11 |
 | custom scheme origin | `<scheme>://<host>` | `<scheme>://<host>` | `http://<scheme>.localhost`, or `http://<host>.<scheme>.localhost` for another host (the page's `location`) |
