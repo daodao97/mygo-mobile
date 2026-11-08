@@ -1,11 +1,12 @@
 # Fork 与上游的差异
 
-本仓库是 `egoist/mygo`（上游，remote `upstream`）的 fork，`daodao97/mygo`（remote `origin`）。本文件记录两者的差异、处理规则和进行中的工作，供维护 fork 的 agent 先读。数字为 2026-11-07 的快照，用文末的命令重新统计。
+本仓库是 `egoist/mygo`（上游，remote `upstream`）的 fork，`daodao97/mygo`（remote `origin`）。本文件记录两者的差异、处理规则和进行中的工作，供维护 fork 的 agent 先读。数字为 2026-11-08 的快照，用文末的命令重新统计。
 
-## 快照（2026-11-07）
+## 快照（2026-11-08）
 
-- fork `main`：`d298e2d8`（合并上游）；`upstream/main`：`1dfa5a1f`；fork 落后上游 0 个提交。
-- fork 独有的非合并提交：115 个；`git diff upstream/main main` 约 62,600 行。
+- fork `main`：`a03239bb`（合并上游）；`upstream/main`：`80013ac3`；fork 落后上游 0 个提交。
+- fork 独有的非合并提交：118 个；`git diff upstream/main main` 约 66,000 行。
+- 2026-11-08 同步了上游 26 个提交（`1dfa5a1f..80013ac3`）。冲突只有两处：`go.mod` 取上游新增的 flac/aac 依赖，保留 fork 的 `Heyana/typesetting-go`；`ui/layoutcache_test.go` 的字段清单两边都保留（上游的 `popupSet`、fork 的触摸/输入字段）。上游新增的 `Window.SetInputRegion` 是可选接口 `platform.InputRegionWindow`，iOS/Android 不需要实现；`ListRow.Hovered`/`Pressed`/`PointerPosition`、终端 `Options.OnDrop` 在 fork 中没有对应实现，没有需要按规则 1 处理的重叠。
 - 约 2/3 是 iOS/Android，其余是对上游的扩展和待提交回上游的修复。共享代码中已没有已知的重复实现（见「已清理的重复实现」）。
 
 ## 规则
