@@ -250,8 +250,12 @@ type ListState struct {
 	first, last int
 	atEnd       bool
 	// read is set when the view read where the list is, which a frame
-	// that moves it then builds another for.
-	read bool
+	// that moves it then builds another for. seen* are the values the
+	// view read: every layout of a frame compares with them, not only the
+	// first, which an earlier layout that changed nothing would hide.
+	read                bool
+	seenFirst, seenLast int
+	seenAtEnd           bool
 	// selRow is the row chosen in the last frame and selKey its key, to
 	// tell the app choosing another from rows moving.
 	selRow int
@@ -367,7 +371,7 @@ func (s *ListState) HoldPlace() { s.following = false }
 // what was loaded, say, loads more. A frame that changes them builds
 // another, for what read them.
 func (s *ListState) Visible() (first, last int) {
-	s.read = true
+	s.markRead()
 	if !s.laidOut {
 		return 0, -1
 	}
@@ -377,8 +381,14 @@ func (s *ListState) Visible() (first, last int) {
 // AtEnd reports whether the list showed its end in the last frame, as
 // Visible does its rows.
 func (s *ListState) AtEnd() bool {
-	s.read = true
+	s.markRead()
 	return s.atEnd
+}
+
+// markRead notes that the view read where the list is, and what it read.
+func (s *ListState) markRead() {
+	s.read = true
+	s.seenFirst, s.seenLast, s.seenAtEnd = s.first, s.last, s.atEnd
 }
 
 // Focused reports whether the List, Table or Outline using s has
@@ -1732,10 +1742,12 @@ func (e *node) relayoutList(ch *node, y float64) {
 // for a view that read where it was.
 func (s *ListState) remember(e *node, first, last int, atEnd bool, scroll float64) {
 	f, n := e.list, e.list.n
-	if s.read && (first != s.first || last != s.last || atEnd != s.atEnd) {
+	if s.read && (first != s.seenFirst || last != s.seenLast || atEnd != s.seenAtEnd) {
+		// The next frame builds the view again, which reads anew.
 		e.c.rt.animate()
+		s.read = false
 	}
-	s.laidOut, s.wroteY, s.req, s.read = true, scroll, listRequest{}, false
+	s.laidOut, s.wroteY, s.req = true, scroll, listRequest{}
 	s.first, s.last, s.atEnd = first, last, atEnd
 	s.following = atEnd
 	s.anchor, s.anchorKey = max(0, first), nil
