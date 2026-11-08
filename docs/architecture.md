@@ -1445,6 +1445,13 @@ with an error naming `mygo.Use`. The official plugins in `plugins/` keep
 each Go package next to its npm package, built into `dist/` by `bun run
 build` like mygo-runtime and released with the same version.
 
+- **desktopcontrol** is Go only, opt-in local desktop capture and input on
+  macOS through purego. It uses ScreenCaptureKit for cancelable JPEG captures,
+  CoreGraphics for display/window identity and events, and AX for window focus
+  and static dialog labels/buttons. It starts no network service; the caller
+  owns consent, leases, input limits and image budgets. Its gamma privacy loop
+  runs only on the main thread of a dedicated helper, supervised by its caller,
+  and restores tables on cancellation or the local recovery shortcut.
 - **fetch** streams a response through a `Channel`: the head first (status,
   headers, final URL), then base64 chunks of the body as Go reads them. The
   JavaScript side builds a `Response` around a pull-based `ReadableStream`

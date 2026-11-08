@@ -58,6 +58,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 
 | 功能 | 位置 | 备注 |
 |---|---|---|
+| `desktopcontrol` | `plugins/desktopcontrol` | 从 Miya 下沉的 macOS 显示器/窗口、ScreenCaptureKit JPEG、键鼠、AX 对话框与 gamma 遮屏；纯 Go，无网络入口，授权与租约由使用方负责 |
 | `Network.PathStatus` / `OnPathChanged` | `network_path.go` | 通过可选接口 `platform.NetworkPathSource` 扩展上游的 `NetworkModule` |
 | `Router.Reset` / `History` / `Transitioning` / JSON 持久化 | `ui/router*.go` | 上游只有 `Back`/`Forward`/`Go`/`Push`/`Replace`；Miya 使用 `Transitioning` |
 | inline combobox | `ui/combobox.go` | 提交 `0f6c018e`、`bc60b9d5`；上游没有 |
