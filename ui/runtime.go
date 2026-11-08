@@ -704,6 +704,12 @@ func (rt *engine) runFrame() {
 	now := rt.frameTime()
 	rt.zoomChanged = false
 	w, h, scale := rt.size()
+	// A soft keyboard reduces the viewport after the field took focus.
+	// Reveal it again in the new layout, without following ordinary scrolls
+	// or moving the view when the keyboard leaves.
+	if (w < rt.painted[0] || h < rt.painted[1]) && rt.focusTakesText() {
+		rt.askReveal(rt.focused, ScrollIntoViewOptions{})
+	}
 	// The content takes the room the inspector leaves.
 	appW := rt.insp.contentWidth(w)
 	rt.insp.lap(-1)

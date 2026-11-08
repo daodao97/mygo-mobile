@@ -480,7 +480,10 @@ Desktop mobile-service implementations explicitly return unsupported.
 Interactive keyboard dismissal uses a native UIScrollView around the surface
 only while an opted-in editable field is active. It tracks the keyboard through
 public UIKit APIs, forwards pan deltas, and keeps the Go surface visually fixed;
-Go owns content scrolling/history. Read-only selection supplies an empty input
+Go owns content scrolling/history. When the viewport shrinks, the shared UI
+engine reveals the focused editable control through its scroll ancestors after
+layout; ordinary scrolling and a growing viewport do not pull it back into view.
+Read-only selection supplies an empty input
 view and disables editing while retaining Go text geometry. Opt-in native
 pinch/rotation recognizers probe Go hit eligibility, then deliver captured gesture
 deltas without activating the cancelled single-contact press.
