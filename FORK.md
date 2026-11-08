@@ -39,7 +39,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 |---|---|
 | `internal/android`、`android/`、`internal/ios`、`native/ios` | 两个平台的后端、JNI/Objective-C 桥接、宿主工程 |
 | `push/`（APNs、Live Activity）、`cmd/mygo` 中的 iOS 打包与扩展 | 推送发送端、`mygo push setup/status`、iOS 构建 |
-| 根包模块 | `app_group`、`background_refresh`、`biometrics`、`device`（扫码、键盘）、`lifecycle`（`OnDidEnterBackground` 等）、`mobile*`、`mobile_experience`、`permissions.go` 中的 `Permissions` 模块（桌面后端返回 unsupported）、`share`、`speech`、`push.go`、`task.go` |
+| 根包模块 | `app_group`、`background_refresh`、`biometrics`、`device`（扫码、键盘）、`lifecycle`（`OnDidEnterBackground` 等）、`microphone`（`Microphone.Start`：16 kHz 单声道 PCM 流，供自定义 `SpeechProvider` 使用；2026-11-08 从 Miya 迁入）、`mobile*`、`mobile_experience`、`permissions.go` 中的 `Permissions` 模块（桌面后端返回 unsupported）、`share`、`speech`、`push.go`、`task.go` |
 | 独立包 | `sharedstore`、`generationcache`、`async`、`backgroundtask`、`timeseries`、`ui/chart/sparkline` |
 | `ui/` | `touch*`、弹性滚动、`native_text_scope`、`input_accessory`、`input_options`、`text_input_client`、`gesture`、`router_touch`、SafeArea |
 | `plugins/terminal` | `software_keys`、`input_context`、`ActiveCursor`、`SelectionAnchor`、`InsertNewline`、`OnSubmit`、触摸选择 |

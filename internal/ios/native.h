@@ -98,3 +98,6 @@ void mygo_ios_network_cancel(uint64_t token);
 char *mygo_ios_speech_start(uint64_t token, const char *json);
 void mygo_ios_speech_stop(uint64_t token);
 void mygo_ios_speech_cancel(uint64_t token);
+
+void mygo_ios_microphone_start(uint64_t token);
+void mygo_ios_microphone_stop(uint64_t token, int cancel);
