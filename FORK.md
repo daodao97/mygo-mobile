@@ -72,14 +72,17 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | 终端：`SelectOnDrag` | `plugins/terminal` | **Miya 在用**（`view_panel.go`）；上游的做法是按住 Shift 拖动 |
 | 终端：远程固定网格（`FixedCols`、`FitToView`、`ReadScreen`、`SetInputEnabled`、`resume`） | `plugins/terminal` | 当前没有使用方 |
 | 终端：TUI 硬换行与缩进续行的路径识别（`hardWrappedFileAt`） | `plugins/terminal/links.go` | 依赖 `vt.RowsJoined`、`RowText`；通过适配层 `matchLink` 调用上游的 `urlAt`/`pathAt` |
-| 终端：中文标点处结束的 URL | `plugins/terminal/links.go` 的 `urlPattern`、`matchAt` | 上游 #1302 只对路径处理了 `proseDelimiters`；fork 在 `urlPattern` 里也排除它们，并在 `matchAt` 中先 `balanced`，否则 `文档（https://x.org/a），继续` 会打开 `https://x.org/a），继续` |
+| 终端：中文标点处结束的 URL | `plugins/terminal/links.go` 的 `urlPattern`、`matchAt` | **已被上游 #1481 覆盖**（URL 在第一个非 ASCII 字符处结束）。下次同步按规则 1 删掉 fork 的 `urlPattern` 改动，保留 `links_test.go` 里仍然适用的用例 |
 | 终端：快照保留软换行和超链接目标 | `internal/vt/snapshot_links.go` | 提交 `c55486a2` |
 | `internal/probe` | 性能探针 | 主要用于 Android |
 | `automation.Start` | `plugins/automation` | 共享库宿主可在建窗前显式启用自动化；运行时 Unix socket 限于私有目录，复用现有 inspector 开关 |
 
 ### C. 等上游合并后就会消失的差异
 
-目前没有进行中的上游 PR。
+进行中的上游 PR：
+
+- #1525（草稿，2026-11-09）：`plugins/desktopcontrol` 作为纯 Go 官方插件，附 `examples/desktopcontrol` 和 `docs/plugins/desktopcontrol.md`。不含 `RunPrivacy`（gamma 遮屏），它留在 fork，之后单独提交。分支 `pr/desktopcontrol-plugin`，worktree `~/.cache/mygo-pr/desktopcontrol`。合并后按规则 1 改用上游版本，fork 只保留 `privacy*`。
+- #1530（草稿，2026-11-09）：macOS 原生 popover 的外观跟随应用主题，而不是锚点（状态栏图标）的外观，即 `8256d934`。分支 `pr/popover-appearance`。冲突在 `popover.go`（上游新增 `popoverHeld`）和 `window.go`（上游条件改为 `w.systemBacking && !w.glassClear`），两边都保留。e2e 测试在上游 main 上失败，带修复后通过。
 
 已被上游合并的 fork 改动：#928（macOS 空闲唤醒）、#1057（CJK 强调）、#1058（链接实线下划线）、#1077（zsh shell integration，上游在其基础上做了修改）、#1305（同步更新在 1 秒后放行，2026-11-06 同步时 `view.go` 取上游，两边的测试都保留）、#1302（终端链接识别：Unicode 路径、带引号的路径、`(行,列)` 和 `#L行C列`，2026-11-07 同步时改用上游，见下表）。
 
@@ -109,13 +112,10 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 
 - 搜索匹配以宽字符结尾时，上游的 `viewportMatches` 少高亮最后一个单元格（fork 原来的 `Highlights` 处理过）。
 - reflow 后上游的搜索保留了匹配，但丢失了选中状态（查找栏显示“0 of 1”）。
-- 终端 URL 在中文标点处结束（见 B 类）：#1302 的后续，改动小，测试已在 `links_test.go`。
-- `508037e1`：生成的 facade 把 nil 回调包装成非 nil，导致 `InputModifiers(mods, nil)` panic。上游 #239 只在回调类型一致时直接转发；类型不同（需要 `makeContext` 包装）时仍会把 nil 包成非 nil，例如上游新加的 `NewTesterWith`。
-- `8256d934`：原生 popover 外观跟随应用主题（macOS）。
 - `fae3d440`：frame-why 诊断和 `LoopFPS`（提交时去掉 `AGENTS.md` 的改动）。
 - Metal 连续阴影捷径：补丁在 `~/.cache/mygo-pr/metal-continuous-shadows.patch`。和上游 #910 的 shader 一起编译后，float16 结果比完整公式差 3 ULP（测试只允许 1 ULP），不是编译器版本造成的，需要调整 shader 写法。
 
-已核实**不是**上游问题、不要再提的：渲染路径日志滞后（`d2a71494`）；`FrameAverage` 计时开销（fork 自己的 API）；滚动条“滚动时才显示”（和上游设计冲突，已放弃）。
+已核实**不是**上游问题、不要再提的：渲染路径日志滞后（`d2a71494`）；`FrameAverage` 计时开销（fork 自己的 API）；滚动条“滚动时才显示”（和上游设计冲突，已放弃）；`ea1f3508`（ListState 第二次布局：上游只有 reveal 会在同一遍里再次调用 `remember`，而 reveal 一定会移动滚动偏移，`movedIn` 必然请求下一帧，所以 bug 被掩盖，写不出在上游失败的测试，2026-11-09 核实）；`508037e1`（facade 把 nil 回调包装成非 nil：上游 #239 之后，只有需要 `makeContext`/`wrapElement` 转换的 13 处回调还会包装，对应的核心实现都不把 nil 当作合法输入；出现 panic 的 `InputModifiers` 和 `Services.Blur` 都是 fork 独有的 API，2026-11-09 核实）。
 
 ## 已知问题
 
