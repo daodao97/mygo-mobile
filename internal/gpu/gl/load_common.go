@@ -8,6 +8,9 @@ import (
 	"unsafe"
 )
 
+// uploadElement is for browsers' video elements, which native GL has none of.
+func uploadElement(uintptr) bool { return false }
+
 // The functions of libepoxy and GL this package calls.
 var (
 	loadOnce sync.Once
