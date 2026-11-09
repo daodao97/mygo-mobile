@@ -22,7 +22,7 @@
 
 | 项目 | 依赖方式 | 影响 |
 |---|---|---|
-| Miya | `replace github.com/egoist/mygo => ../mygo` | fork `main` 改动立即生效；改公开 API 前先编译 Miya |
+| Miya | `go.mod` 固定 fork 的伪版本（`replace github.com/egoist/mygo => github.com/daodao97/mygo-mobile <pseudo-version>`）；本地未提交的 `go.work` 用 `replace => ../mygo` | 本地开发时 fork `main` 的改动立即生效，CI 和打包用 `go.mod` 里的伪版本：fork 改动推送后要在 Miya 升级伪版本（`GOWORK=off go mod edit -replace …@<commit> && GOWORK=off go mod tidy`），用 `GOWORK=off go build ./...` 验证。改公开 API 前先编译 Miya。2026-11-09 改到 `mygo-mobile` 并升到 `fa57cd73` 的提交在 Miya 分支 `chore/mygo-mobile`（`a2d1a44`） |
 | myclash | `replace => ../mygo` | 同上；`build.noindex/` 下有旧的 mygo 源码备份，`go build ./...` 会报错，编译时排除 |
 | gorex、retty、gorex-workflows | 固定 fork 的伪版本（`80d5e6a3`、`d30cf320`） | 终端用的是自己的 `retty/internal/terminal` 副本，不依赖本仓库的 `plugins/terminal`；升级 mygo 时再检查 |
 
