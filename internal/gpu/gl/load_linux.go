@@ -247,3 +247,6 @@ func versionString() string { return goString(glGetString(glVersion)) }
 
 // rendererString names the current context's renderer.
 func rendererString() string { return goString(glGetString(glRenderer)) }
+
+// uploadElement is for browsers' video elements, which Linux has none of.
+func uploadElement(uintptr) bool { return false }

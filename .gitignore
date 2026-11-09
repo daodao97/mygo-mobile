@@ -18,3 +18,7 @@ mygo.ts
 # c-shared 同时产出这个头（Go 侧导出的 C 声明），同样是构建产物
 /android/app/src/main/jniLibs/**/*.h
 benchmarks/*/target/
+
+# What Zig 0.16 fetches into the packages of native libraries.
+zig-pkg/
+.zig-cache/

@@ -264,7 +264,7 @@ func TestPlatformClipboardWithoutBridge(t *testing.T) {
 	if _, err := c.ReadData(nil); !errors.Is(err, ErrPlatformBridge) {
 		t.Errorf("ReadData() error = %v, want ErrPlatformBridge", err)
 	}
-	if err := c.WriteData(transfer.TextData("x"), nil); !errors.Is(err, ErrPlatformBridge) {
+	if err := c.WriteData(transfer.TextData("x"), false, nil); !errors.Is(err, ErrPlatformBridge) {
 		t.Errorf("WriteData() error = %v, want ErrPlatformBridge", err)
 	}
 }
@@ -336,7 +336,7 @@ func TestPlatformClipboardWriteData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			install(t, tt.bridge)
 			released := false
-			err := androidClipboard{}.WriteData(tt.data, func() { released = true })
+			err := androidClipboard{}.WriteData(tt.data, false, func() { released = true })
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatalf("WriteData() = nil, want error")
@@ -925,7 +925,7 @@ func TestClipboardMarkdownPreservesDistinctRepresentations(t *testing.T) {
 		reps = append(reps, transfer.Bytes(format, []byte(values[format])))
 	}
 	released := false
-	if err := c.WriteData(transfer.New(transfer.NewItem(reps...)), func() { released = true }); err != nil || !released {
+	if err := c.WriteData(transfer.New(transfer.NewItem(reps...)), false, func() { released = true }); err != nil || !released {
 		t.Fatalf("write: %v, released %v", err, released)
 	}
 	f.payload = f.writes[0]
@@ -950,7 +950,7 @@ func TestClipboardEmptyMarkdownIsPresent(t *testing.T) {
 	f := &fakeBridge{}
 	install(t, f)
 	c := androidClipboard{}
-	if err := c.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.Markdown, []byte{}))), nil); err != nil {
+	if err := c.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.Markdown, []byte{}))), false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.writes) != 1 || !f.writes[0].HasMarkdown || f.writes[0].HasPlain {

@@ -312,4 +312,21 @@ export const showcase: ShowcaseApp[] = [
     mode: "native",
     image: "/showcase/gorequest.jpg",
   },
+  {
+    name: "Ferry",
+    description:
+      "A per-process proxy router for Windows, built on ProxyBridge, with ordered rules, SOCKS5 and HTTP proxy nodes, and live connections and logs.",
+    url: "https://github.com/ayuayue/ferry",
+    author: "ayuayue",
+    mode: "web",
+  },
+  {
+    name: "MyVNC",
+    description:
+      "A VNC and Microsoft Remote Desktop viewer for Windows and macOS, rebuilt from TigerVNC. Connecting to a Mac uses its built-in Screen Sharing, so the Mac installs nothing, with a high-performance mode streaming HEVC or H.264 at the source frame rate and file transfer both ways.",
+    url: "https://github.com/si-mods/MyVNC",
+    author: "si-mods",
+    mode: "native",
+    image: "/showcase/myvnc.jpg",
+  },
 ]

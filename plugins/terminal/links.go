@@ -9,10 +9,10 @@ import (
 )
 
 // urlPattern finds the URLs programs print as text, which a Command+click
-// opens as it does hyperlinks. Fork: a URL in Chinese or Japanese prose ends
-// at proseDelimiters too, as a path does, so 文档（https://x.org/a），继续
-// opens https://x.org/a (an upstream PR candidate, see FORK.md).
-var urlPattern = regexp.MustCompile(`(?:https?|ftp|file)://[^\s"'<>` + "`" + proseDelimiters + `\x00-\x1f]+|mailto:[^\s"'<>` + "`" + proseDelimiters + `]+`)
+// opens as it does hyperlinks. A URL sends what is not ASCII encoded, so it
+// ends at the first such character: the CJK text or full-width punctuation
+// that often follows one without a space.
+var urlPattern = regexp.MustCompile(`(?:(?:https?|ftp|file)://|mailto:)[^\s"'<>` + "`" + `\x00-\x1f\x7f-\x{10ffff}]+`)
 
 // proseDelimiters end a path printed in Chinese or Japanese prose, which
 // puts no space around it; a quoted path may hold them.
@@ -230,8 +230,8 @@ func urlAt(text []rune, cols []int, col int) (url string, x0, x1 int) {
 func matchAt(re *regexp.Regexp, text []rune, cols []int, col int) (string, int, int) {
 	s := string(text)
 	for _, m := range re.FindAllStringIndex(s, -1) {
-		// Fork: a bracket the URL did not open ends it even before prose, as
-		// the ) of (https://x.org/a)已保存 (with urlPattern's proseDelimiters).
+		// Fork: a bracket the URL did not open ends it, as the ) of
+		// (https://x.org/a)，继续.
 		u := trimURL(balanced(s[m[0]:m[1]]))
 		if u == "" {
 			continue

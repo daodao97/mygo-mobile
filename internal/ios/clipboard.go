@@ -30,7 +30,9 @@ func (clipboard) ReadImage() []byte {
 
 // UIKit copies all supplied representations before returning. No Go provider
 // or pointer remains retained by the pasteboard.
-func (c clipboard) WriteData(data transfer.Data, released func()) error {
+// concealed is not marked on iOS yet (UIPasteboard has localOnly and
+// expiration options for that); the data is written as is.
+func (c clipboard) WriteData(data transfer.Data, concealed bool, released func()) error {
 	payload, err := prepareClipboard(data)
 	if err != nil {
 		return err

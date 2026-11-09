@@ -99,8 +99,11 @@ const (
 	blendOneMinusSrc1A     = 18
 	filterLinear           = 1
 	statusError            = 5
-	layerWidthSizable      = 1 << 1
-	layerHeightSizable     = 1 << 4
+	// commandBufferErrorTimeout is MTLCommandBufferErrorTimeout, the code
+	// of a frame the watchdog killed because the GPU never finished it.
+	commandBufferErrorTimeout = 2
+	layerWidthSizable         = 1 << 1
+	layerHeightSizable        = 1 << 4
 )
 
 var (
@@ -341,10 +344,18 @@ func need(obj id, what string, methods ...string) error {
 }
 
 type texture struct {
-	tex       id
+	tex id
+	// chroma is the texture of the chroma of a frame of video in NV12,
+	// whose luma tex is, and cv the CVMetalTextures tex and chroma wrap,
+	// owned, for a frame in a CVPixelBuffer (see video.go).
+	chroma    id
+	cv        [2]uintptr
 	w, h      int
 	gen, ver  uint64
 	lastFrame uint64
+	// gpu marks an image's texture that its GPUSource gave, which shows
+	// memory of its own (an IOSurface): never one to upload pixels into.
+	gpu bool
 }
 
 // drawState is what drawing scenes into a target keeps from frame to
@@ -450,6 +461,7 @@ type Renderer struct {
 	color  texture
 	empty  id // a texture to bind where there is none
 	images map[uint64]*texture
+	video  videoState
 	// canvases are the textures canvases are drawn into.
 	canvases map[uint64]*canvasTexture
 	// blurred are the textures of the images the frame draws blurred
@@ -466,7 +478,10 @@ type Renderer struct {
 	inflight    [ringSize]id
 	slot, inUse int
 	err         error
-	checked     bool
+	// timeout tells that err is a frame the GPU did not finish in time:
+	// the device is still there, but it cannot draw now.
+	timeout bool
+	checked bool
 
 	// lastRender is when the last frame drew; trimTimer trims the
 	// drawables once none has for a while, armed until it fires, and
@@ -981,7 +996,23 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		}
 		return 0
 	}
+	if img.GPU != nil {
+		if tex := r.gpuTexture(img); tex != 0 {
+			return tex
+		}
+		// None for Metal: its pixels, as any image's.
+	}
+	if s := img.Surface; s != nil && (s.Native != 0 || s.Format == scene.SurfaceNV12 && s.Planes[1].Pix != nil) {
+		return r.surfaceTexture(img, s)
+	}
 	t := r.images[img.ID()]
+	if t != nil && (t.gpu || t.chroma != 0 || t.cv != [2]uintptr{}) {
+		// The texture its GPUSource gave before, or a frame of video it
+		// showed and no longer does: pixels go to one of their own.
+		r.dropTexture(t)
+		delete(r.images, img.ID())
+		t = nil
+	}
 	if t == nil {
 		pix := img.Pixels()
 		if pix == nil {
@@ -1016,6 +1047,30 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 	return t.tex
 }
 
+// gpuTexture returns the texture its GPUSource gives of an image that
+// something draws on the GPU (native.Texture), made again as the image's
+// version changes, or 0 when it gives none.
+func (r *Renderer) gpuTexture(img *scene.Image) uintptr {
+	t := r.images[img.ID()]
+	if t != nil && t.gpu && t.ver == img.Version() && t.w == img.W && t.h == img.H {
+		t.lastFrame = r.frame
+		return t.tex
+	}
+	tex := id(img.GPU.GPUTexture(scene.Metal, uintptr(r.device)))
+	if tex == 0 {
+		return 0
+	}
+	if t == nil {
+		t = &texture{}
+		r.images[img.ID()] = t
+	} else {
+		// The previous frame's, or a texture of its pixels.
+		release(&t.tex)
+	}
+	t.tex, t.w, t.h, t.ver, t.lastFrame, t.gpu = tex, img.W, img.H, img.Version(), r.frame, true
+	return t.tex
+}
+
 // ringSize bounds frames in flight. Each slot owns the main target's and
 // every canvas's instance buffer, so CPU encoding can overlap GPU drawing.
 // A slot is reused only after its previous frame completes; in-place atlas
@@ -1033,9 +1088,14 @@ func (r *Renderer) waitSlot(slot int) {
 	}
 	send(cb, "waitUntilCompleted")
 	if int(send(cb, "status")) == statusError && r.err == nil {
-		r.err = fmt.Errorf("metal: a frame failed: %s", describe(send(cb, "error")))
+		e := send(cb, "error")
+		r.err = fmt.Errorf("metal: a frame failed: %s", describe(e))
+		// A frame the watchdog killed leaves the device wedged rather than
+		// gone: another one submitted now waits the same timeout through.
+		r.timeout = e != 0 && int(send(e, "code")) == commandBufferErrorTimeout
 	}
 	release(&r.inflight[slot])
+	r.releaseHeld(slot)
 }
 
 // waitLast waits for the GPU to finish the frames in flight, so that this
@@ -1174,8 +1234,9 @@ func (r *Renderer) build(cb id, s *scene.Scene, d *drawState) (*scene.Scene, err
 	d.b.ClipSkip = true
 	d.b.SplitCorners() // only Metal's shader draws continuous corners
 	d.b.BlurredImage = func(img *scene.Image, bk scene.Backdrop) uintptr { return r.blurImage(cb, img, bk) }
+	d.b.Chroma = r.chromaTexture
 	s = d.b.Build(s, r.imageTexture)
-	d.b.BlurredImage = nil
+	d.b.BlurredImage, d.b.Chroma = nil, nil
 	if err := r.syncStops(d); err != nil {
 		return nil, err
 	}
@@ -1291,6 +1352,9 @@ func (r *Renderer) drawBuilt(cb id, s *scene.Scene, target id, d *drawState, par
 		if b.Image != 0 && b.Image != st.image {
 			st.image = b.Image
 			msg2(enc, selSetFragmentTexture, st.image, 2)
+			if b.Chroma != 0 {
+				msg2(enc, selSetFragmentTexture, b.Chroma, 10)
+			}
 		}
 		if clip := or(id(b.ClipMask), r.empty); clip != st.clip {
 			st.clip = clip
@@ -1408,6 +1472,7 @@ func (r *Renderer) begin(cb, target id, load uintptr, s *scene.Scene, b *gpu.Bui
 	send(enc, "setFragmentTexture:atIndex:", r.empty, 2)
 	send(enc, "setFragmentTexture:atIndex:", r.empty, 3)
 	send(enc, "setFragmentTexture:atIndex:", or(r.stopsTex, r.empty), 9)
+	send(enc, "setFragmentTexture:atIndex:", r.empty, 10) // chroma (gpu.Batch.Chroma)
 	return enc, nil
 }
 
@@ -1613,6 +1678,12 @@ func or(a, b id) id {
 	}
 	return b
 }
+
+// TimedOut reports whether the frame that failed did so because the GPU did
+// not finish it in time, rather than the device going away: the driver is
+// wedged, so a frame submitted now would wait the timeout through again,
+// while the device may draw again a moment later.
+func (r *Renderer) TimedOut() bool { return r.timeout }
 
 // Render draws s into the layer and presents it.
 func (r *Renderer) Render(s *scene.Scene) (err error) {
@@ -1854,7 +1925,7 @@ func (r *Renderer) releaseTextures() {
 	release(&r.mask.tex)
 	release(&r.color.tex)
 	for key, t := range r.images {
-		release(&t.tex)
+		r.dropTexture(t)
 		delete(r.images, key)
 	}
 	for key, t := range r.canvases {
@@ -1999,6 +2070,7 @@ func (r *Renderer) Release() {
 			release(&r.layer)
 		}
 		r.releaseTextures()
+		r.releaseVideo()
 		r.ages.Reset()
 		release(&r.empty)
 		release(&r.sampler)
@@ -2055,7 +2127,7 @@ func (r *Renderer) sweepIfDue() {
 func (r *Renderer) sweep() {
 	for key, t := range r.images {
 		if r.frame-t.lastFrame > 240 {
-			release(&t.tex)
+			r.dropTexture(t)
 			delete(r.images, key)
 		}
 	}

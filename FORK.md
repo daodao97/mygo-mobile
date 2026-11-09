@@ -7,6 +7,7 @@
 - fork `main`：`a03239bb`（合并上游）；`upstream/main`：`80013ac3`；fork 落后上游 0 个提交。
 - fork 独有的非合并提交：118 个；`git diff upstream/main main` 约 66,000 行。
 - 2026-11-08 同步了上游 26 个提交（`1dfa5a1f..80013ac3`）。冲突只有两处：`go.mod` 取上游新增的 flac/aac 依赖，保留 fork 的 `Heyana/typesetting-go`；`ui/layoutcache_test.go` 的字段清单两边都保留（上游的 `popupSet`、fork 的触摸/输入字段）。上游新增的 `Window.SetInputRegion` 是可选接口 `platform.InputRegionWindow`，iOS/Android 不需要实现；`ListRow.Hovered`/`Pressed`/`PointerPosition`、终端 `Options.OnDrop` 在 fork 中没有对应实现，没有需要按规则 1 处理的重叠。
+- 2026-11-09 同步了上游 39 个提交（到 `6a730f12`）。冲突：`docs/architecture.md` 两边都保留（fork 的 iOS 段落、上游的 `ffi`）；`ui/runtime.go` 两边都保留（fork 的帧计时、上游的 `sweepVideos`）；`ui/layoutcache_test.go` 字段清单取并集；`internal/gpu/gl/load_linux.go` 只取上游新增的 `uploadElement`，`setShaderSource`/`shaderLog`/`programLog`/`infoLog` 在 fork 已移到 `load_common.go`（与 Android 共用）；终端 `urlPattern` 按规则 1 改用上游 #1481（URL 在第一个非 ASCII 字符处结束），fork 的写法删除；shader 二进制取上游后重新 `go generate`。上游 #1476 给 `platform.Clipboard.WriteData` 加了 `concealed` 参数，iOS/Android 后端已跟上签名，但还没有标记机密内容（iOS 的 `UIPasteboard` localOnly、Android 的 `EXTRA_IS_SENSITIVE`）。
 - 约 2/3 是 iOS/Android，其余是对上游的扩展和待提交回上游的修复。共享代码中已没有已知的重复实现（见「已清理的重复实现」）。
 
 ## 规则
@@ -72,7 +73,6 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | 终端：`SelectOnDrag` | `plugins/terminal` | **Miya 在用**（`view_panel.go`）；上游的做法是按住 Shift 拖动 |
 | 终端：远程固定网格（`FixedCols`、`FitToView`、`ReadScreen`、`SetInputEnabled`、`resume`） | `plugins/terminal` | 当前没有使用方 |
 | 终端：TUI 硬换行与缩进续行的路径识别（`hardWrappedFileAt`） | `plugins/terminal/links.go` | 依赖 `vt.RowsJoined`、`RowText`；通过适配层 `matchLink` 调用上游的 `urlAt`/`pathAt` |
-| 终端：中文标点处结束的 URL | `plugins/terminal/links.go` 的 `urlPattern`、`matchAt` | **已被上游 #1481 覆盖**（URL 在第一个非 ASCII 字符处结束）。下次同步按规则 1 删掉 fork 的 `urlPattern` 改动，保留 `links_test.go` 里仍然适用的用例 |
 | 终端：快照保留软换行和超链接目标 | `internal/vt/snapshot_links.go` | 提交 `c55486a2` |
 | `internal/probe` | 性能探针 | 主要用于 Android |
 | `automation.Start` | `plugins/automation` | 共享库宿主可在建窗前显式启用自动化；运行时 Unix socket 限于私有目录，复用现有 inspector 开关 |

@@ -284,7 +284,10 @@ func (androidClipboard) ReadData(formats []transfer.Format) (transfer.Data, erro
 // released immediately: Android's clipboard keeps its own copy in the system
 // process, and nothing here reads data later the way a lazy desktop provider
 // is read when a paste asks for it.
-func (androidClipboard) WriteData(data transfer.Data, released func()) error {
+//
+// concealed is not marked yet (ClipDescription.EXTRA_IS_SENSITIVE, API 33);
+// the data is written as is.
+func (androidClipboard) WriteData(data transfer.Data, concealed bool, released func()) error {
 	p, ok := payloadFromData(data)
 	if !ok && len(data.Formats()) > 0 {
 		return platform.ErrUnsupported
@@ -324,7 +327,7 @@ func (androidClipboard) ReadText() string {
 
 // WriteText puts text on the clipboard, without an HTML representation.
 func (c androidClipboard) WriteText(text string) {
-	_ = c.WriteData(transfer.TextData(text), nil)
+	_ = c.WriteData(transfer.TextData(text), false, nil)
 }
 
 // ReadHTML returns the clipboard's HTML markup, "" when it holds none.
@@ -341,7 +344,7 @@ func (androidClipboard) ReadHTML() string {
 // to give, so a paste into a field that takes only text gets nothing — which is
 // what the platform does with an HTML-only clip anyway.
 func (androidClipboard) WriteHTML(markup string) {
-	_ = androidClipboard{}.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.HTML, []byte(markup)))), nil)
+	_ = androidClipboard{}.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.HTML, []byte(markup)))), false, nil)
 }
 
 // ReadImage returns nil: what an image on the clipboard is here is a
