@@ -1,18 +1,20 @@
-<p align="center">
-<img width="800" height="360" alt="MyGo!!!!!" src="https://github.com/user-attachments/assets/c3eee9bc-5f22-4032-95b6-776e8381910a" />
-</p>
+# MyGo（daodao97 fork）
 
-**Desktop apps in Go, with native UI or a web frontend.**
+**用 Go 写桌面和移动端应用：原生 UI 或网页前端，同一套代码跑在 macOS、Linux、Windows、iOS 和 Android 上。**
 
-> [!NOTE]
-> 这是 [egoist/mygo](https://github.com/egoist/mygo) 的 fork（`daodao97/mygo`），在上游之上增加了 **iOS / Android 原生 UI** 和一批桌面扩展。
-> 与上游的差异、合并规则和进行中的 PR 见 [FORK.md](FORK.md)。
+这是 [egoist/mygo](https://github.com/egoist/mygo) 的 fork。上游提供桌面端的系统 webview 与 Go 原生 UI（无 cgo、单个二进制、类型化 IPC）；本 fork 在此之上增加了 **iOS / Android 原生 UI** 和一批桌面扩展，并持续合并上游。
+与上游差异的完整记录、合并规则和进行中的 PR 见 [FORK.md](FORK.md)。
 
-## 关于本 fork
+## 基于本 fork 的应用
 
-### 为什么有这个 fork
+| 应用 | 平台 | 说明 |
+|---|---|---|
+| [Miya](https://github.com/daodao97/miya) | macOS + iOS / Android | 在一个工作区里并行管理多个编码 agent 会话（Codex、Claude Code），手机端远程查看、接管和接收推送；`plugins/desktopcontrol`、`Microphone` 等功能都从这里下沉而来 |
+| [Retty](https://github.com/daodao97/retty) | macOS + iOS | 终端工具，桌面与手机同构，使用 fork 的终端插件扩展（触摸选择、软键盘、远程固定网格） |
 
-上游只面向桌面（macOS、Linux、Windows）和浏览器。本 fork 把同一套 Go 原生 UI 跑到手机上，让一个应用的界面和逻辑在桌面与移动端同构，例如终端工具 [Retty](https://github.com/daodao97/retty)（macOS + iOS）和 Miya。
+## 为什么有这个 fork
+
+上游只面向桌面（macOS、Linux、Windows）和浏览器。本 fork 把同一套 Go 原生 UI 跑到手机上，让一个应用的界面和逻辑在桌面与移动端同构，例如终端工具 [Retty](https://github.com/daodao97/retty)（macOS + iOS）和 [Miya](https://github.com/daodao97/miya)。
 
 移动端曾提交给上游，被维护者婉拒：
 
@@ -23,7 +25,7 @@
 因此移动端代码**只在本 fork 维护**，不再向上游提交。Android 后端在
 [@Heyana](https://github.com/Heyana) 贡献的实现基础上合入并继续补齐。
 
-### 比上游多出的功能
+## 比上游多出的功能
 
 **移动端（仅 fork）**
 
@@ -46,7 +48,7 @@
 
 完整清单与代码位置见 [FORK.md](FORK.md) 的「差异分类」。
 
-### 与上游的同步策略
+## 与上游的同步策略
 
 - **同一功能两套实现时，以上游为准。** 上游落地了 fork 也有的功能，就删掉 fork 的版本，把调用方（Miya、myclash 及 fork 自身）迁到上游 API，不因为 fork 先做了而保留。上游没有的功能继续保留。
 - **定期合并**：`git fetch upstream && git merge --no-ff upstream/main`，冲突按上一条处理；合并后编译桌面、iOS、Android 与下游应用，再快进推送 `main`，从不强推。上游给 `platform` 接口新增的方法要在 iOS/Android 后端补上。
@@ -54,7 +56,7 @@
 - **回馈上游**：通用的修复和功能从 `upstream/main` 上的独立 worktree 提取，剥离移动端代码，以草稿 PR 提交。
 - 桌面构建始终保持 `CGO_ENABLED=0`；cgo 只用于移动端。
 
-### 提交到上游的 PR
+## 提交到上游的 PR
 
 | PR | 内容 | 状态 |
 |---|---|---|
@@ -69,7 +71,7 @@
 | [#1525](https://github.com/egoist/mygo/pull/1525) | `plugins/desktopcontrol` 官方插件 | 草稿，进行中 |
 | [#1530](https://github.com/egoist/mygo/pull/1530) | macOS 原生 popover 跟随应用外观 | 草稿，进行中 |
 
-### 使用本 fork
+## 使用本 fork
 
 模块路径仍是 `github.com/egoist/mygo`，在应用的 `go.mod` 里用 `replace` 指向本 fork：
 
@@ -77,129 +79,11 @@
 replace github.com/egoist/mygo => github.com/daodao97/mygo <version>
 ```
 
-以下是上游的原始介绍。
+## 文档
 
----
-
-Sponsored by:
-
-<p align="center">
-  <a href="https://openuptime.app/?utm_source=github&utm_medium=sponsor&utm_campaign=mygo">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://openuptime.app/sponsor/banner-dark.png">
-      <img width="600" alt="OpenUptime: open-source uptime monitoring and status pages" src="https://openuptime.app/sponsor/banner-light.png">
-    </picture>
-  </a>
-</p>
-
----
-
-Each MyGo window shows one of two kinds of interface, and one app, or one
-window, can mix them:
-
-- **A web page**, in the webview the OS already has: WKWebView on macOS,
-  WebKitGTK on Linux, WebView2 on Windows. Build the frontend with any web
-  tools; it calls your Go code through a TypeScript client generated from it.
-- **Native UI**, written in Go alone with package `ui` and
-  drawn by MyGo itself on the GPU: no HTML, no JavaScript and no webview, so
-  the window opens at once and takes little memory.
-
-Either way, an app is a single Go binary of a few megabytes, focused on low
-memory and CPU use.
-
-- **Desktop without cgo**: cross-compile macOS, Linux and Windows from any machine.
-- **Experimental iOS native UI**: a UIKit host with Go views, CoreText and
-  Metal; build with cgo on macOS and Xcode. See [iOS](docs/ios.md).
-- **Typed IPC** for pages: bind Go services, stream values through channels
-  and send typed events; the TypeScript client is generated from your Go
-  code.
-- **A Go UI toolkit** for native UI: flexbox and grid layout, widgets, text
-  editing with input methods, virtualized lists, SVG icons, animations,
-  screen reader support, and views you test without a window; Liquid Glass
-  on every platform with the glass plugin; web pages inside native UI, under
-  the menus and dialogs it shows over them.
-- **Desktop APIs** for both: windows, menus, tray, dialogs, notifications,
-  global shortcuts, deep links, file associations, recent documents, Now
-  Playing and the media keys, the system accent color and accessibility
-  settings, watching files, and more.
-- **Ready to ship**: app bundles and disk images, Windows installers, Debian
-  packages, PKGBUILDs for Arch Linux and a Linux install script, code signing, notarization, and signed
-  auto-updates with delta updates and an update window in the manner of
-  Sparkle.
-
-A window with a web page, whose frontend calls Go:
-
-```go
-type Greeter struct{}
-
-// Greet returns a greeting.
-func (Greeter) Greet(name string) string { return "Hello, " + name }
-
-func main() {
-	mygo.Bind(Greeter{})
-	mygo.App.WhenReady(func() {
-		mygo.NewWindow(mygo.WindowOptions{Title: "Hello", URL: "/"})
-	})
-	if err := mygo.App.Run(); err != nil {
-		log.Fatal(err)
-	}
-}
-```
-
-```ts
-import { Greeter } from "./mygo"; // generated
-
-document.body.textContent = await Greeter.greet("Ada");
-```
-
-A window with native UI, whose view is a Go function of the app's state:
-
-```go
-type counter struct{ n int }
-
-func (s *counter) view(c *ui.Context) {
-	ui.Column(c).Fill().Center().Gap(12).Children(func() {
-		ui.Text(c, fmt.Sprint(s.n)).FontSize(40).Bold()
-		if ui.PrimaryButton(c, "Increment").Clicked() {
-			s.n++
-		}
-	})
-}
-
-func main() {
-	s := &counter{}
-	mygo.App.WhenReady(func() {
-		mygo.NewWindow(mygo.WindowOptions{
-			Title:   "Counter",
-			Content: ui.View(s.view),
-		})
-	})
-	if err := mygo.App.Run(); err != nil {
-		log.Fatal(err)
-	}
-}
-```
-
-## Getting started
-
-With [Go](https://go.dev/dl/) 1.27.3+ and [Bun](https://bun.sh), create an app
-with a web frontend:
-
-```sh
-bunx mygo-cli init my-app      # or: npx mygo-cli init my-app
-cd my-app
-bun run dev
-```
-
-An app of native UI needs Go alone:
-
-```sh
-go run github.com/egoist/mygo/cmd/mygo@latest init -template native my-app
-cd my-app
-go tool mygo dev
-```
-
-Read the [documentation](docs/README.md).
+- 框架本身的用法沿用上游文档：[docs/README.md](docs/README.md)，以及 [上游仓库](https://github.com/egoist/mygo)。
+- iOS：[docs/ios.md](docs/ios.md)；Android：`AGENTS.md` 的 Runbook 与 `scripts/android-*.sh`。
+- 架构、线程模型与添加功能的清单：[docs/architecture.md](docs/architecture.md)。
 
 ## License
 
