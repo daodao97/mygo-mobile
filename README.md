@@ -86,7 +86,7 @@ MyGo Mobile 是 [egoist/mygo](https://github.com/egoist/mygo) 的 fork（仓库 
 | [#1302](https://github.com/egoist/mygo/pull/1302) | 终端识别中文文本中的路径、带引号路径与行列定位 | 已合并 |
 | [#1305](https://github.com/egoist/mygo/pull/1305) | 终端同步更新 1 秒后放行 | 已合并 |
 | [#1525](https://github.com/egoist/mygo/pull/1525) | `plugins/desktopcontrol` 官方插件 | 草稿，进行中 |
-| [#1530](https://github.com/egoist/mygo/pull/1530) | macOS 原生 popover 跟随应用外观 | 草稿，进行中 |
+| [#1530](https://github.com/egoist/mygo/pull/1530) | macOS 原生 popover 跟随应用外观 | 已合并 |
 
 ## 使用本 fork
 
