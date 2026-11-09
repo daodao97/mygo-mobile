@@ -115,6 +115,9 @@ internal object MygoServices {
             }
             "haptic" -> { MygoEffects.haptic(a, value as String); finish(id, true) }
             "badge" -> MygoEffects.badge(a, id, (value as Number).toInt())
+            "push-register" -> { MygoPush.register(a); finish(id, true) }
+            "push-present" -> { MygoPush.show(a.applicationContext, value as JSONObject); finish(id, true) }
+            "keep-running" -> { MygoKeepRunning.set(a, value as? String); finish(id, true) }
             "theme-source" -> { MygoEffects.sourceChanged(a, value as String); finish(id, true) }
             "status-bar" -> { val options = value as JSONObject; MygoEffects.statusBar(a, options.getString("style"), options.getBoolean("hidden")); finish(id, true) }
             "audio-start" -> MygoAudio.start(a, id, (value as JSONObject).getLong("stream"))

@@ -122,9 +122,13 @@ func (a *Application) OnNotification(fn func(NotificationEvent)) func() {
 	return mobileEvents.notifications.add(fn, false)
 }
 
-// RegisterPushNotifications starts APNs registration. Configure aps-environment
-// entitlements and a matching provisioning profile; it does not request alert
-// permission. Tokens and errors arrive through the listeners below.
+// RegisterPushNotifications starts remote push registration. On iOS this is
+// APNs: configure aps-environment entitlements and a matching provisioning
+// profile. On Android the host tries, in order, the push channels the
+// application registers (MygoPushChannel classes named by the manifest
+// meta-data org.mygo.push.channels); MyGo bundles none. It does not
+// request alert permission. Subscriptions, tokens and errors arrive through
+// OnPushSubscription and the listeners below.
 func (a *Application) RegisterPushNotifications() error {
 	needsApp("App.RegisterPushNotifications")
 	return onMainValue(func() error { return backend().Mobile().RegisterPush() })
@@ -151,5 +155,6 @@ func (appHandler) PushRegistered(token string, err error) {
 		fire1(&mobileEvents.errors, err)
 	} else {
 		fire1(&mobileEvents.tokens, token)
+		fire1(&pushSubscriptions, PushSubscription{Service: PushAPNs, Token: token})
 	}
 }

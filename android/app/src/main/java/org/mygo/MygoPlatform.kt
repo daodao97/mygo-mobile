@@ -452,21 +452,23 @@ object MygoPlatform {
     }
 
     /**
-     * 点击通知的 PendingIntent：指向本文件里的 [NotificationReceiver]。
+     * 点击通知的 PendingIntent：直接打开 [MygoActivity]，由它交回 id（[handleNotificationIntent]）。
      *
+     * · 不经 BroadcastReceiver 跳板：Android 12 起不允许从广播里启动 Activity，
+     *   点击后应用不会回到前台。
      * · 用 **setData** 带上 id：PendingIntent 的「同一个」判定不看 extras，只按
      *   action/data/component 等比较；只塞 extra 的话不同通知会互相覆盖，点谁都回同一个 id。
-     * · **FLAG_IMMUTABLE**：Android 12+ 强制要求显式可变性（缺了会抛
-     *   IllegalArgumentException），本场景不需要接收方改内容，所以不可变。
-     * · 接收方要能收到，需要在 Manifest 里声明 [NotificationReceiver]（见产出补丁）；
-     *   没有声明时点击通知会没有任何反应 —— 这也是本波明确写出来的接线缺口，而不是静默。
+     * · MygoActivity 是导出的（launcher），所以带一个本机随机密钥，别的应用伪造不了点击。
+     * · **FLAG_IMMUTABLE**：Android 12+ 强制要求显式可变性。
      */
     private fun clickIntent(ctx: Context, id: String): PendingIntent {
-        val intent = Intent(ctx, NotificationReceiver::class.java)
+        val intent = Intent(ctx, MygoActivity::class.java)
             .setAction(ACTION_NOTIFICATION_CLICK)
             .setData(Uri.parse("mygo://notification/${Uri.encode(id)}"))
             .putExtra(EXTRA_NOTIFICATION_ID, id)
-        return PendingIntent.getBroadcast(
+            .putExtra(EXTRA_NOTIFICATION_KEY, notificationKey(ctx))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        return PendingIntent.getActivity(
             ctx,
             0,
             intent,
@@ -474,22 +476,26 @@ object MygoPlatform {
         )
     }
 
-    /**
-     * 通知被点击时的接收方。
-     *
-     * 用 BroadcastReceiver 而不是 Activity：Activity 没在运行时（应用被系统回收后）点击
-     * 通知也会走到这里，Go 侧的 AppHandler.NotificationClicked 因此不会漏。
-     * 需要在 Manifest 里注册（`android:exported="false"`，只由本应用的通知触发）。
-     */
-    class NotificationReceiver : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != ACTION_NOTIFICATION_CLICK) return
-            val id = intent.getStringExtra(EXTRA_NOTIFICATION_ID) ?: return
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            nm?.cancel(id, NOTIFICATION_ID)
-            // Go 侧：AppHandler.NotificationClicked(id)。
-            MygoPlatform.notificationClicked(id)
-        }
+    private const val EXTRA_NOTIFICATION_KEY = "org.mygo.NOTIFICATION_KEY"
+
+    private fun notificationKey(ctx: Context): String {
+        val p = ctx.applicationContext.getSharedPreferences("org.mygo.notifications", Context.MODE_PRIVATE)
+        return p.getString("click-key", null) ?: java.util.UUID.randomUUID().toString().also { p.edit().putString("click-key", it).apply() }
+    }
+
+    /** MygoActivity 的 onCreate / onNewIntent：点击本地通知启动的 intent。 */
+    fun handleNotificationIntent(ctx: Context, intent: Intent?) {
+        if (intent?.action != ACTION_NOTIFICATION_CLICK) return
+        val id = intent.getStringExtra(EXTRA_NOTIFICATION_ID)
+        val key = intent.getStringExtra(EXTRA_NOTIFICATION_KEY)
+        intent.action = null
+        intent.data = null
+        intent.removeExtra(EXTRA_NOTIFICATION_ID)
+        intent.removeExtra(EXTRA_NOTIFICATION_KEY)
+        if (id == null || key != notificationKey(ctx)) return
+        ctx.getSystemService(NotificationManager::class.java)?.cancel(id, NOTIFICATION_ID)
+        // Go 侧：AppHandler.NotificationClicked(id)。
+        notificationClicked(id)
     }
 
     /** 通知被点击：把应用给的 id（UTF-8 字节）交给 Go 侧。 */

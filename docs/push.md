@@ -189,6 +189,37 @@ removal remain application policy. ActivityKit subscriptions can use the
 optional manager described above.
 See [iOS notification APIs](ios.md) for callbacks and platform details.
 
+## Android
+
+MyGo bundles no Android push service. Two building blocks cover the common
+cases:
+
+- **Your own connection.** `mygo.Power.KeepRunning(reason)` starts a
+  foreground service whose ongoing notification shows `reason`, so the process
+  keeps running in the background and an application-owned connection can
+  deliver messages; show them with `mygo.NewNotification`, whose `OnClick` also
+  fires when the tap brings the app back. Call it while the app is in the
+  foreground (Android 12+ refuses to start foreground services from the
+  background) and call the returned release when done. A process the system or
+  the person ends is not restarted.
+- **A push channel of your own.** Implement `org.mygo.MygoPushChannel`
+  (`service`, `available`, `register`) in the Android host and list the classes,
+  in priority order, in the manifest:
+
+  ```xml
+  <meta-data android:name="org.mygo.push.channels" android:value="com.example.MyChannel" />
+  ```
+
+  `App.RegisterPushNotifications` tries them in order. Report an address with
+  `MygoPush.subscribed(ctx, service, token, data)`, a failure with
+  `MygoPush.failed` (the next channel is tried), and a message with
+  `MygoPush.received(ctx, json)`, where the JSON is
+  `{"v":1,"id":"…","title":"…","body":"…","group":"…","badge":3,"silent":false,"data":{…}}`.
+  Subscriptions arrive through `App.OnPushSubscription` (`Service`, `Token`,
+  `Data`), which iOS also fires with `{apns, token}`; foreground arrivals pass
+  through `SetNotificationPresentationHandler`, and taps arrive in
+  `App.OnNotification` with their data.
+
 ## Production and checks
 
 Development-signed device builds use Sandbox. TestFlight/App Store distribution

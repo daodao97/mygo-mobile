@@ -377,6 +377,7 @@ func (b *Backend) markReady() {
 			b.urls = nil
 			h.OpenURLs(urls)
 		}
+		b.flushMobile(h)
 	}
 }
 

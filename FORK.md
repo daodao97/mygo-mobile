@@ -54,8 +54,16 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 - 增加异步原生服务请求、取消与完成一次的桥接，接通权限、设备认证/PIN 回退、系统对话框、图片选择、文件保存、录音、浏览器/PDF/导出、触觉和角标。
 - 增加原生浮动编辑菜单、选区手柄、文字裁切与 UTF-16 映射；纯文本、HTML、Markdown 同时复制，Markdown 通过受限只读 FileProvider URI 供其他应用读取。
 - 补齐私有目录、Java 网络接口快照、字号/减少动效、主题系统栏、彩色 emoji 和系统本地时区初始化。共享 UI 的内置编辑器增加直接选区设置与预编辑方向处理，保持既有自定义输入客户端的兼容路径。
-- 在 API36/arm64 模拟器完成真实收发、相机/相册二维码识别、选图、录音、文件浏览/导出及选区/剪贴板验证；这不是全功能或全版本验收。FCM 推送与连续取景扫码尚未实现，API29/30 彩色字形回退未实机验证。
+- 在 API36/arm64 模拟器完成真实收发、相机/相册二维码识别、选图、录音、文件浏览/导出及选区/剪贴板验证；这不是全功能或全版本验收。连续取景扫码尚未实现，API29/30 彩色字形回退未实机验证。远程推送见下文 2026-11-09。
 - 桌面维持无 cgo；生产配置 counter-native / hello 的大小仍为 9,869,042 / 9,750,354 字节。Android 修改保留在 fork，不提交移动端代码到上游。
+
+#### Android 后台运行与推送接口（2026-11-09）
+
+- `Power.KeepRunning`（上游接口）在 Android 上实现为前台服务 `MygoKeepRunningService`（`specialUse`，`START_NOT_STICKY`，按引用计数启停，`internal/android/backend/power_android.go`、`MygoKeepRunning.kt`）。应在前台调用；进程被结束后不自动重启。
+- 本地通知点击直接打开 `MygoActivity`（Android 12 起广播跳板无法把应用带回前台），intent 带本机随机密钥；原 `MygoPlatform$NotificationReceiver` 已删除。
+- 通用推送接口：`App.OnPushSubscription`（`Service`、`Token`、`Data`；iOS 也发 `{apns, token}`）、可选 `platform.PushSubscriber`。Android 不内置任何通道：应用实现 `org.mygo.MygoPushChannel`，在 Manifest meta-data `org.mygo.push.channels` 中列出类名；`MygoPush.kt` 负责选通道、显示 JSON 消息与点击回传（JNI `Native.onPush` / `Native.onNotification`，Ready 前排队回放）。
+- 曾实现并实测过 FCM（`push/fcm`）与 UnifiedPush/Web Push（`push/webpush`）通道，因需要中转服务或额外安装分发器而移除。Miya 改用 `KeepRunning` 保持自己的 tailcat 连接收通知。
+- 已在 API36 模拟器验证前台服务、后台保活和本地通知点击；自定义推送通道的注册路径只验证了编译。
 
 ### B. 对上游的扩展（保留；通用的可以提交上游）
 

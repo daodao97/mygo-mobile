@@ -26,6 +26,9 @@
     -->
     <!-- T34: Android 13+ 发通知需要该运行时权限（缺它时 notify() 会被系统接受并丢弃） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Power.KeepRunning：前台服务（MygoKeepRunningService，类型 specialUse） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- pprof 的调试服务器（lab 的 cmd/lab/pprof_android.go）要开一个
          127.0.0.1 的 socket，而 Android 10 起没有这个权限连 AF_INET 都建不了。
          它只绑回环，不接外网；release 包不带那个文件，所以这条也就没有用处，
@@ -84,10 +87,15 @@
 
         <activity android:name=".MygoBrowserActivity" android:exported="false" />
 
-        <!-- T34: 通知被点击时的回传接收方（org.mygo.MygoPlatform.NotificationReceiver） -->
-        <receiver
-            android:name=".MygoPlatform$NotificationReceiver"
-            android:exported="false" />
+        <!-- Power.KeepRunning：让应用在后台继续运行（见 MygoKeepRunning.kt）。 -->
+        <service
+            android:name=".MygoKeepRunningService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the application's own connection open while it is in the background" />
+        </service>
 
         <!--
           扫码用的写入口：相机把全尺寸照片写进本应用的 cache。

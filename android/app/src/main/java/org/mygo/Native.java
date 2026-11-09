@@ -28,6 +28,10 @@ public final class Native {
     static native void onAudio(long token, byte[] data, byte[] error, boolean end);
     static native void onEnvironment(byte[] data);
     static native void onURL(byte[] data);
+    /** FCM / UnifiedPush 注册结果（UTF-8 JSON，见 internal/android/backend/push_android.go）。 */
+    static native void onPush(byte[] data);
+    /** 前台收到的远程通知，或被点击的远程通知（UTF-8 JSON）。 */
+    static native void onNotification(byte[] data);
 
     static {
         // 库名必须逐字是 "mygo"

@@ -40,7 +40,11 @@ func (m androidMobile) SetStatusBar(style string, hidden bool) error {
 		Hidden bool   `json:"hidden"`
 	}{style, hidden})
 }
-func (androidMobile) RegisterPush() error { return platform.ErrUnsupported }
+
+// RegisterPush asks the host to register with FCM or UnifiedPush. The result
+// arrives asynchronously through OnPush: a subscription, or the reason there
+// is none (neither channel bundled, no Play services and no distributor).
+func (m androidMobile) RegisterPush() error { return m.b.NativeFire("push-register", nil) }
 
 // Device names this phone to desktops. There is no JNI method for the model
 // string yet, so it is the host's answer — right on the OS, generic on the

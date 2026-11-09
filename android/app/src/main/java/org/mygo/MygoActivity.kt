@@ -99,7 +99,10 @@ class MygoActivity : Activity() {
 
         // 平台能力（剪贴板/URL/通知/无障碍）的 Java 侧握手；必须在任何平台能力被使用前调用。
         MygoPlatform.install(this, view)
-        if (savedInstanceState?.getString("mygo-url-process") != urlProcess) intent?.dataString?.let { Native.onURL(it.toByteArray(Charsets.UTF_8)) }
+        if (savedInstanceState?.getString("mygo-url-process") != urlProcess) {
+            intent?.dataString?.let { Native.onURL(it.toByteArray(Charsets.UTF_8)) }
+            MygoPush.handleIntent(this, intent); MygoPlatform.handleNotificationIntent(this, intent)
+        }
 
         // 初始的夜间模式：之后的变化走 onConfigurationChanged（manifest 声明了
         // configChanges=uiMode，切深色模式不重建 Activity，那是 Go 唯一能听到的地方）。
@@ -117,6 +120,7 @@ class MygoActivity : Activity() {
     override fun onNewIntent(intent:Intent){
         super.onNewIntent(intent);setIntent(intent)
         intent.dataString?.let{Native.onURL(it.toByteArray(Charsets.UTF_8))}
+        MygoPush.handleIntent(this, intent); MygoPlatform.handleNotificationIntent(this, intent)
     }
     override fun onStart() {
         super.onStart()
