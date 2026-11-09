@@ -23,7 +23,7 @@
 
 | 项目 | 依赖方式 | 影响 |
 |---|---|---|
-| Miya | `go.mod` 固定 fork 的伪版本（`replace github.com/egoist/mygo => github.com/daodao97/mygo-mobile <pseudo-version>`）；本地未提交的 `go.work` 用 `replace => ../mygo` | 本地开发时 fork `main` 的改动立即生效，CI 和打包用 `go.mod` 里的伪版本：fork 改动推送后要在 Miya 升级伪版本（`GOWORK=off go mod edit -replace …@<commit> && GOWORK=off go mod tidy`），用 `GOWORK=off go build ./...` 验证。改公开 API 前先编译 Miya。2026-11-09 起固定 `daodao97/mygo-mobile` 的 `304baaa7`（Miya `main` 的 `15f1b75`） |
+| Miya | `go.mod` 固定 fork 的伪版本（`replace github.com/egoist/mygo => github.com/daodao97/mygo-mobile <pseudo-version>`）；本地未提交的 `go.work` 用 `replace => ../mygo` | 本地开发时 fork `main` 的改动立即生效，CI 和打包用 `go.mod` 里的伪版本：fork 改动推送后要在 Miya 升级伪版本（`GOWORK=off go mod edit -replace …@<commit> && GOWORK=off go mod tidy`），用 `GOWORK=off go build ./...` 验证。改公开 API 前先编译 Miya。2026-11-09 起固定 `daodao97/mygo-mobile` 的 `2035305e`（Miya `main` 的 `d19d26a`） |
 | myclash | `replace => ../mygo` | 同上；`build.noindex/` 下有旧的 mygo 源码备份，`go build ./...` 会报错，编译时排除 |
 | gorex、retty、gorex-workflows | 固定 fork 的伪版本（`80d5e6a3`、`d30cf320`） | 终端用的是自己的 `retty/internal/terminal` 副本，不依赖本仓库的 `plugins/terminal`；升级 mygo 时再检查 |
 
@@ -84,6 +84,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 进行中的上游 PR：
 
 - #1525（草稿，2026-11-09）：`plugins/desktopcontrol` 作为纯 Go 官方插件，附 `examples/desktopcontrol` 和 `docs/plugins/desktopcontrol.md`。不含 `RunPrivacy`（gamma 遮屏），它留在 fork，之后单独提交。分支 `pr/desktopcontrol-plugin`，worktree `~/.cache/mygo-pr/desktopcontrol`。合并后按规则 1 改用上游版本，fork 只保留 `privacy*`。
+- #1571（草稿，2026-11-09）：loading 插件默认 30 fps（`Options.FPS`、`DefaultFPS`），`Painter.AnimationFrameRate` 在窗口没有键盘焦点时请求一半的帧，`ui.Tester.SetRefreshRate`。fork 的提交是 `2035305e`。上游版本的 `AnimationFrameRate` 保留上游的 `p.rt.repainting = true`，fork 用的是 frame-why 诊断的 `repaintFrames(false)`，其余相同。分支 `pr/loading-fps`，worktree `~/.cache/mygo-pr/loading-fps`。合并后同步时 `ui/paint.go` 以上游为准，同时保留 fork 的 `repaintFrames`。
 
 已被上游合并的 fork 改动：#928（macOS 空闲唤醒）、#1057（CJK 强调）、#1058（链接实线下划线）、#1077（zsh shell integration，上游在其基础上做了修改）、#1305（同步更新在 1 秒后放行，2026-11-06 同步时 `view.go` 取上游，两边的测试都保留）、#1530（macOS 原生 popover 跟随应用外观，2026-11-09 合并；同步时自动合并在 `showPopover` 里留下了 fork 和上游各一份 `setAppearance`，删掉 fork 那份，`popover.go` 与上游一致）、#1302（终端链接识别：Unicode 路径、带引号的路径、`(行,列)` 和 `#L行C列`，2026-11-07 同步时改用上游，见下表）。
 
