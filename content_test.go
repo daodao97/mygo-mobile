@@ -634,12 +634,12 @@ func TestContentMaximizeButton(t *testing.T) {
 // Extending backgrounds does not turn off control insets. Insets can change
 // without a resize (system chrome), and the keyboard removes bottom padding.
 func TestContentExtendedSafeAreaUpdatesWithoutResize(t *testing.T) {
-	var seen ui.SafeArea
+	var seen [4]float32
 	var frames int
 	_, fw := testWindow(t, WindowOptions{Width: 390, Height: 844, ExtendIntoSafeArea: true, Content: ui.View(func(c *ui.Context) {
 		frames++
-		seen = c.SafeArea()
-		ui.Column(c).Fill().Padding(seen.Top, seen.Right, seen.Bottom, seen.Left).Children(func() { ui.Text(c, "Controls") })
+		seen[0], seen[1], seen[2], seen[3] = c.SafeArea()
+		ui.Column(c).Fill().Padding(seen[0], seen[1], seen[2], seen[3]).Children(func() { ui.Text(c, "Controls") })
 	})})
 	if !fw.Opts.ExtendIntoSafeArea {
 		t.Fatal("native surface did not receive safe-area extension")
@@ -650,8 +650,8 @@ func TestContentExtendedSafeAreaUpdatesWithoutResize(t *testing.T) {
 		before := onMainValue(func() int { return frames })
 		onMain(func() { fb.SetSafeArea(fw, area) })
 		onMain(func() { surface.Frame() })
-		got := onMainValue(func() ui.SafeArea { return seen })
-		if got != (ui.SafeArea{Top: float32(area.Top), Right: float32(area.Right), Bottom: float32(area.Bottom), Left: float32(area.Left)}) || onMainValue(func() int { return frames }) <= before {
+		got := onMainValue(func() [4]float32 { return seen })
+		if got != [4]float32{float32(area.Top), float32(area.Right), float32(area.Bottom), float32(area.Left)} || onMainValue(func() int { return frames }) <= before {
 			t.Fatalf("safe-area change did not reach layout: %+v want %+v", got, area)
 		}
 	}

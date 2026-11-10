@@ -1025,12 +1025,12 @@ func (h *windowHost) titleBar() TitleBar {
 	return TitleBar{Height: float32(t.Height), Left: float32(t.Left), Right: float32(t.Right)}
 }
 
-func (h *windowHost) safeArea() SafeArea {
+func (h *windowHost) safeArea() safeInsets {
 	if h.conn.SafeArea == nil {
-		return SafeArea{}
+		return safeInsets{}
 	}
 	a := h.conn.SafeArea()
-	return SafeArea{
+	return safeInsets{
 		Top:    float32(a.Top),
 		Right:  float32(a.Right),
 		Bottom: float32(a.Bottom),

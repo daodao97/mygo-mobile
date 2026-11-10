@@ -45,11 +45,11 @@ func (c *Context) Valid() bool { return c.build() != nil }
 // terminal wants the room rather than the inset.
 //
 // It is zero on a window whose chrome takes none, which is every desktop.
-func (c *Context) SafeArea() SafeArea {
+func (c *Context) SafeArea() (top, right, bottom, left float32) {
 	if raw := c.build(); raw != nil {
 		return raw.SafeArea()
 	}
-	return SafeArea{}
+	return 0, 0, 0, 0
 }
 
 // Invalidate requests a frame from any goroutine.

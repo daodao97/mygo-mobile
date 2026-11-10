@@ -8,11 +8,11 @@ import (
 
 func TestZoomMobileInsetsAndTouch(t *testing.T) {
 	zoom := float32(1)
-	var insets SafeArea
+	var insets [4]float32
 	var events []InputEvent
 	tt := NewTester(func(c *Context) {
 		c.SetZoom(zoom)
-		insets = c.SafeArea()
+		insets[0], insets[1], insets[2], insets[3] = c.SafeArea()
 		Box(c).Absolute().Left(60).Top(20).Size(30, 30).Focusable().TouchSelection().
 			TextCaret(Rect{5, 6, 1, 12}).HandleInput(func(ev InputEvent) bool {
 			if ev.Kind == InputPointerDown || ev.Kind == InputPointerUp || ev.Kind == InputScroll {
@@ -22,10 +22,10 @@ func TestZoomMobileInsetsAndTouch(t *testing.T) {
 		})
 	}, 320, 200)
 	defer tt.rt.close()
-	tt.SetSafeArea(SafeArea{Top: 24, Right: 8, Bottom: 40, Left: 12})
+	tt.SetInsets(24, 8, 40, 12)
 	zoom = 2
 	tt.Frame()
-	if insets != (SafeArea{Top: 12, Right: 4, Bottom: 20, Left: 6}) {
+	if insets != [4]float32{12, 4, 20, 6} {
 		t.Fatalf("safe area did not follow the frame's zoom: %+v", insets)
 	}
 	touch(tt, platform.PointerDown, 1, 140, 60)

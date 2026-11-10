@@ -73,7 +73,7 @@ type host interface {
 	titleBar() TitleBar
 	// safeArea returns the room the device's chrome takes from the
 	// content: a status bar, a notch, a home indicator. Zero on a desktop.
-	safeArea() SafeArea
+	safeArea() safeInsets
 	// vibrancy reports whether the window shows a material where the
 	// frames are transparent.
 	vibrancy() bool

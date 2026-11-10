@@ -194,9 +194,9 @@ func (h *headless) invalidate() {
 	h.invalidated.Store(true)
 	h.requested.Store(true)
 }
-func (h *headless) safeArea() SafeArea {
+func (h *headless) safeArea() safeInsets {
 	a := h.safe
-	return SafeArea{Top: float32(a.Top), Right: float32(a.Right), Bottom: float32(a.Bottom), Left: float32(a.Left)}
+	return safeInsets{Top: float32(a.Top), Right: float32(a.Right), Bottom: float32(a.Bottom), Left: float32(a.Left)}
 }
 
 // writeClipboard copies s, unless FailClipboard set an error;
@@ -462,17 +462,17 @@ func (t *Tester) SetTitleBar(bar TitleBar) {
 	t.Frame()
 }
 
-// SetSafeArea sets the room the device's own chrome takes from the content
+// SetInsets sets the room the device's own chrome takes from the content
 // (a status bar, a notch, a home indicator), which Context.SafeArea
 // returns. A test uses it to lay a page out as a phone would:
 //
-//	tester.SetSafeArea(ui.SafeArea{Top: 24, Bottom: 48})
-func (t *Tester) SetSafeArea(a SafeArea) {
+//	tester.SetInsets(24, 0, 48, 0)
+func (t *Tester) SetInsets(top, right, bottom, left float32) {
 	t.h.safe = platform.SafeArea{
-		Top:    int(a.Top),
-		Right:  int(a.Right),
-		Bottom: int(a.Bottom),
-		Left:   int(a.Left),
+		Top:    int(top),
+		Right:  int(right),
+		Bottom: int(bottom),
+		Left:   int(left),
 	}
 	t.Frame()
 }

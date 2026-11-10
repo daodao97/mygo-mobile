@@ -112,11 +112,11 @@ func (rt *engine) titleBar() TitleBar {
 }
 
 // safeArea returns the device's insets in the content's DIPs.
-func (rt *engine) safeArea() SafeArea {
+func (rt *engine) safeArea() safeInsets {
 	a := rt.host.safeArea()
 	if rt.zoomed() {
 		z := rt.contentZoom
-		a = SafeArea{Top: a.Top / z, Right: a.Right / z, Bottom: a.Bottom / z, Left: a.Left / z}
+		a = safeInsets{Top: a.Top / z, Right: a.Right / z, Bottom: a.Bottom / z, Left: a.Left / z}
 	}
 	return a
 }
