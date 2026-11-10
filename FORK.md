@@ -60,7 +60,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | `Router.InteractiveBack`、`Element.TouchScroll/TouchSelection/Gestures`、`GestureEvent` | #940 的触摸引擎（`touch_back.go` 边缘返回、`LongPressed`） | 通用手势（`Gestures`、捏合）没有对应，未逐项核实 |
 | `WindowOptions.ExtendIntoSafeArea` | 未找到 | 待核实 |
 
-#940 没有对应、要改写为插件的：`Microphone`、`Speech`（含 `RegisterProvider`）、`Scanner.ScanCode`、`OpenInAppBrowser`、`InputAccessoryBar`/`InputAction`、`Network.Prepare`/`NetworkError`，以及上面「缺口」列的部分。与移动端无关、不受影响的 B 类扩展：`Router.Reset/History/Transitioning`、`Network.PathStatus/OnPathChanged`、终端 `SelectOnDrag`、`ComboboxParts.Inline`、`Window.OnFirstFrame`、richtext `OnInput`/`OnPaste`/`OnCopy`、`Context.Blur`。
+#940 没有对应、要改写为插件的：`Microphone`、`Speech`（含 `RegisterProvider`）、`Scanner.ScanCode`（**已改写**为 `plugins/scanner`）、`OpenInAppBrowser`（**已改写**为 `plugins/browser`）、`InputAccessoryBar`/`InputAction`、`Network.Prepare`/`NetworkError`，以及上面「缺口」列的部分。与移动端无关、不受影响的 B 类扩展：`Router.Reset/History/Transitioning`、`Network.PathStatus/OnPathChanged`、终端 `SelectOnDrag`、`ComboboxParts.Inline`、`Window.OnFirstFrame`、richtext `OnInput`/`OnPaste`/`OnCopy`、`Context.Blur`。
 
 ## 差异分类
 

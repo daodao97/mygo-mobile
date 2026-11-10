@@ -81,6 +81,8 @@ type ScanOptions struct {
 // NSCameraUsageDescription in ios.infoPlist. Canceling ctx dismisses the
 // scanner and returns ctx.Err(). Only one system presentation can be active.
 // Currently implemented on iOS; other backends return ErrUnsupported.
+//
+// Deprecated: apps call scanner.Scan (plugins/scanner), which calls this.
 func (ScannerModule) ScanCode(ctx context.Context, o ScanOptions) (string, error) {
 	needsApp("Scanner.ScanCode")
 	if ctx == nil {

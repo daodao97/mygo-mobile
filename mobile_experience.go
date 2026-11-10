@@ -11,6 +11,8 @@ import (
 // OpenInAppBrowser presents the system browser without leaving the application.
 // It returns when Done is pressed or ctx is canceled. iOS apps opt in with
 // ios.native.support: ["browser"]. Other platforms return ErrUnsupported.
+//
+// Deprecated: apps call browser.Open (plugins/browser), which calls this.
 func OpenInAppBrowser(ctx context.Context, raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
