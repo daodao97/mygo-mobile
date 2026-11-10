@@ -54,7 +54,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | `Biometrics`、`Authentication*` 错误码 | `plugins/biometrics`：`Available`、`Authenticate(ctx, reason)` | **已迁移**：fork 新增 `plugins/biometrics`，API 照 #940（默认允许设备密码回退），暂时跑在根包 `mygo.Biometrics` 上；细分错误作为 fork 扩展（`ErrUnavailable`、`ErrNotEnrolled`、`ErrLockedOut`、`ErrPasscodeNotSet`、`ErrBusy`、`ErrInactive`、`ErrMissingPurpose`），同时包着系统的 `AuthenticationError`。根包的 `Biometrics` 换后端时删除 |
 | `RegisterPushNotifications`、`OnPushToken`、`OnNotification`、`OnPushRegistrationError` | `plugins/push`：`Register`、`OnToken`、`OnMessage`、`OnOpened` | 没有 `SetNotificationPresentationHandler`（前台展示策略） |
 | `Permissions.Query/Request` | `plugins/permissionflow`：`Check`、`Request` | **已迁移**：移植 #940 对 permissionflow 的手机端改动（`Photos`、`Contacts`、`Notifications`、`Location`、`OnPhones`），iOS/Android 暂时跑在根包 `mygo.Permissions` 上（`phone.go` 做映射）；`Contacts`、`Bluetooth`、`Calendars` 在 fork 的手机后端返回 `ErrUnsupported`。根包的 `Permissions` 换后端时删除 |
-| `Dialog.Photos` | `plugins/imagepicker`：`Pick` | — |
+| `Dialog.Photos` | `plugins/imagepicker`：`Pick` | **已迁移**：fork 新增 `plugins/imagepicker`，API 照 #940，暂时跑在 `Dialog.Photos` 上；只支持 `Images`，`Videos`/`Any`/`Capture` 返回 `ErrUnsupported`，`Limit` 之外的副本删除 |
 | `Lifecycle`、`OnDidEnterBackground`、`OnWillEnterForeground` | `OnDidResignActive`/`OnDidBecomeActive`、`OnSaveState` | 不区分「不活跃」和「进入后台」 |
 | `SetNotificationBadge` | `App.SetBadgeCount`（上游 `main` 已有，规则 1） | **已迁移**：删除 fork 的方法，Android 的 `App().SetBadge` 接到启动器角标；`SetBadgeCount` 不返回错误，未授权时角标不显示 |
 | `Router.InteractiveBack`、`Element.TouchScroll/TouchSelection/Gestures`、`GestureEvent` | #940 的触摸引擎（`touch_back.go` 边缘返回、`LongPressed`） | 通用手势（`Gestures`、捏合）没有对应，未逐项核实 |
