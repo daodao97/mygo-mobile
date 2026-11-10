@@ -48,8 +48,10 @@ type Rect struct{ X, Y, Width, Height int }
 
 // TitleBar is the room the window controls take at the top of a window
 // with a hidden title bar, in DIPs: they sit in a band of Height along the
-// top edge, Left wide from the left edge and Right wide from the right.
-type TitleBar struct{ Height, Left, Right int }
+// top edge, Left wide from the left edge and Right wide from the right,
+// and end Bottom below the top edge, which is Height where they fill the
+// band.
+type TitleBar struct{ Height, Left, Right, Bottom int }
 
 // SafeArea is the room the system's own chrome takes from a window's
 // content, in DIPs: a status bar or a notch at the top, a home indicator
@@ -1251,6 +1253,12 @@ type Shell interface {
 	// OpenApplication starts the application at Application.Path, or
 	// brings it to the front.
 	OpenApplication(path string) error
+	// DefaultApp returns the application the system would use to open
+	// url. url may be a web URL such as https://example.com, a file://
+	// URL, or any URL whose scheme is registered with the system. It
+	// is supported on macOS, Linux and Windows; other platforms return
+	// (Application{}, ErrUnsupported).
+	DefaultApp(url string) (Application, error)
 }
 
 // Application is an installed application (Backend.Applications): Path is

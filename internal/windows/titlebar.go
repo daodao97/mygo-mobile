@@ -159,7 +159,9 @@ func (w *window) TitleBar() platform.TitleBar {
 	if w.caption == nil || w.fullScreen || len(w.shownButtons()) == 0 {
 		return platform.TitleBar{}
 	}
-	return platform.TitleBar{Height: w.titleBarHeight(), Right: captionButtonWidth * len(w.shownButtons())}
+	// The buttons fill the title bar's height.
+	h := w.titleBarHeight()
+	return platform.TitleBar{Height: h, Right: captionButtonWidth * len(w.shownButtons()), Bottom: h}
 }
 
 // SafeArea is zero on Windows: the taskbar, the window frame and the

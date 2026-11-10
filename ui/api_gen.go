@@ -732,6 +732,10 @@ func (_handle *Context) Theme() *Theme {
 //
 //	bar := c.TitleBar()
 //	ui.Row(c).Height(max(bar.Height, 32)).Padding(0, bar.Right, 0, bar.Left).DragWindow()
+//
+// A sidebar under the controls starts below Bottom:
+//
+//	ui.Column(c).Padding(bar.Bottom+8, 0, 0, 0)
 func (_handle *Context) TitleBar() TitleBar {
 	_ctx := _handle.build()
 	if _ctx == nil {
@@ -5309,7 +5313,11 @@ func (_handle Element) FixedLineHeight(v float32) Element {
 
 // Focus gives the element the keyboard focus. Called in every frame, it
 // keeps it there; AutoFocus gives it once. A field around an input, as
-// SearchField's, gives it to its input, where typing goes.
+// SearchField's, gives it to its input, where typing goes. When the focus
+// moves to it, it scrolls the containers around it as little as shows it,
+// as Tab does and the web's focus() does; ScrollIntoView lines it up
+// otherwise. While a pointer button is held it scrolls nothing: what a
+// press focuses, as the line a grip moves, is under the pointer.
 func (_handle Element) Focus() Element {
 	_node := _handle.node()
 	if _node == nil {

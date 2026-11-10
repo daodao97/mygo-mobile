@@ -593,6 +593,14 @@ func (androidShell) TypeIcon(string, int) ([]byte, error) { return nil, platform
 // argument, so there is nothing to translate path into.
 func (androidShell) OpenApplication(string) error { return platform.ErrUnsupported }
 
+// DefaultApp reports unsupported: Android resolves a URL to its handler with
+// PackageManager.resolveActivity, which names a package and an activity, not
+// the path of an application that platform.Application describes, and from
+// API 30 on package visibility hides most of the answer from an app anyway.
+func (androidShell) DefaultApp(string) (platform.Application, error) {
+	return platform.Application{}, platform.ErrUnsupported
+}
+
 // validateExternalURL checks url against externalSchemes and returns it
 // unchanged.
 //
