@@ -5,6 +5,7 @@ package mygo
 import (
 	"errors"
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/internal/pushhub"
 	"testing"
 	"time"
 )
@@ -30,9 +31,6 @@ func TestMobileNotificationScheduleAndLaunch(t *testing.T) {
 	clicked := 0
 	off := n.OnClick(func() { clicked++ })
 	defer off()
-	var events []NotificationEvent
-	offEvent := App.OnNotification(func(e NotificationEvent) { events = append(events, e) })
-	defer offEvent()
 	offClick := App.OnNotificationClick(func(id string) {
 		if id == "previous-run" {
 			clicked++
@@ -44,8 +42,8 @@ func TestMobileNotificationScheduleAndLaunch(t *testing.T) {
 		fb.ReceiveNotification(n.ID(), map[string]string{"route": "/features/notifications"}, true)
 		fb.ReceiveNotification("previous-run", map[string]string{"route": "cold"}, true)
 	})
-	if clicked != 2 || len(events) != 3 || events[0].Clicked || !events[2].Clicked || events[2].Data["route"] != "cold" {
-		t.Fatalf("clicks %d events %+v", clicked, events)
+	if clicked != 2 {
+		t.Fatalf("clicks %d", clicked)
 	}
 	n.Close()
 	onMain(func() {
@@ -91,10 +89,14 @@ func TestMobileFeedbackStatusAndPush(t *testing.T) {
 	}
 	token := ""
 	var registrationError error
-	off := App.OnPushToken(func(value string) { token = value })
-	defer off()
-	offError := App.OnPushRegistrationError(func(err error) { registrationError = err })
-	defer offError()
+	pushhub.Registered = func(value string, err error) {
+		if err != nil {
+			registrationError = err
+		} else {
+			token = value
+		}
+	}
+	defer func() { pushhub.Registered = nil }()
 	if err := App.RegisterPushNotifications(); err != nil {
 		t.Fatal(err)
 	}

@@ -2,12 +2,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/push"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -204,30 +206,35 @@ func main() {
 		}
 		log.Printf("opened URL: %s", rawURL)
 	})
-	mygo.App.OnNotification(func(e mygo.NotificationEvent) {
-		s.notificationRoute = e.Data["route"]
-		s.notificationResult = "Delivered: " + e.ID
-		if e.Clicked {
-			s.notificationResult = "Opened notification: " + e.ID
-			s.app.Diagnostics = false
-			s.mobile = false
-			s.initNavigation()
-			s.app.Tab = 1
-			s.app.Routers[1].Reset("/features")
-			s.app.Routers[1].Push("/features/notifications")
+	openNotifications := func(result string) {
+		s.notificationResult = result
+		s.app.Diagnostics = false
+		s.mobile = false
+		s.initNavigation()
+		s.app.Tab = 1
+		s.app.Routers[1].Reset("/features")
+		s.app.Routers[1].Push("/features/notifications")
+		if s.window != nil {
+			s.window.Invalidate()
 		}
+	}
+	// The app's own notifications: their taps, also of an earlier run.
+	mygo.App.OnNotificationClick(func(id string) { openNotifications("Opened notification: " + id) })
+	// Pushes (APNs), through plugins/push.
+	push.OnMessage(func(data []byte) {
+		s.notificationResult = "Delivered push: " + string(data)
 		if s.window != nil {
 			s.window.Invalidate()
 		}
 	})
-	mygo.App.OnPushToken(func(token string) {
+	push.OnOpened(func(data []byte) {
+		var d map[string]string
+		_ = json.Unmarshal(data, &d)
+		s.notificationRoute = d["route"]
+		openNotifications("Opened push: " + string(data))
+	})
+	push.OnToken(func(token string) {
 		s.notificationResult = "APNs token: " + token
-		if s.window != nil {
-			s.window.Invalidate()
-		}
-	})
-	mygo.App.OnPushRegistrationError(func(err error) {
-		s.notificationResult = "APNs registration: " + err.Error()
 		if s.window != nil {
 			s.window.Invalidate()
 		}

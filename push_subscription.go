@@ -4,6 +4,7 @@ import (
 	"maps"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/internal/pushhub"
 )
 
 // PushService names the delivery channel of a PushSubscription.
@@ -27,16 +28,16 @@ var pushSubscriptions listeners[func(PushSubscription)]
 
 // OnPushSubscription receives every successful registration, on every
 // platform, including token rotation and registrations from an earlier run.
-// Register before App.Run; callbacks run on the UI thread. OnPushToken still
-// receives the token.
+// Register before App.Run; callbacks run on the UI thread. push.OnToken
+// (plugins/push) still receives the token.
 func (a *Application) OnPushSubscription(fn func(PushSubscription)) func() {
 	return pushSubscriptions.add(fn, false)
 }
 
 func (appHandler) PushSubscribed(s platform.PushSubscription) {
 	sub := PushSubscription{Service: PushService(s.Service), Token: s.Token, Data: maps.Clone(s.Data)}
-	if sub.Token != "" {
-		fire1(&mobileEvents.tokens, sub.Token)
+	if sub.Token != "" && pushhub.Registered != nil {
+		pushhub.Registered(sub.Token, nil)
 	}
 	fire1(&pushSubscriptions, sub)
 }

@@ -24,7 +24,7 @@
 
 | 项目 | 依赖方式 | 影响 |
 |---|---|---|
-| Miya | `go.mod` 固定 fork 的伪版本（`replace github.com/egoist/mygo => github.com/daodao97/mygo-mobile <pseudo-version>`）；本地未提交的 `go.work` 用 `replace => ../mygo` | 本地开发时 fork `main` 的改动立即生效，CI 和打包用 `go.mod` 里的伪版本：fork 改动推送后要在 Miya 升级伪版本（`GOWORK=off go mod edit -replace …@<commit> && GOWORK=off go mod tidy`），用 `GOWORK=off go build ./...` 验证。改公开 API 前先编译 Miya。2026-11-10 起固定 `daodao97/mygo-mobile` 的 `563ececd`（向 #940 收敛的第一阶段；Miya 工作区中与 richtext `Menu`、触觉、角标、安全区、键盘 API 的迁移一起，尚未提交） |
+| Miya | `go.mod` 固定 fork 的伪版本（`replace github.com/egoist/mygo => github.com/daodao97/mygo-mobile <pseudo-version>`）；本地未提交的 `go.work` 用 `replace => ../mygo` | 本地开发时 fork `main` 的改动立即生效，CI 和打包用 `go.mod` 里的伪版本：fork 改动推送后要在 Miya 升级伪版本（`GOWORK=off go mod edit -replace …@<commit> && GOWORK=off go mod tidy`），用 `GOWORK=off go build ./...` 验证。改公开 API 前先编译 Miya。2026-11-10 起固定 `daodao97/mygo-mobile` 的向 #940 收敛第二阶段的提交（见 Miya 的 `go.mod`；Miya 工作区中与 richtext `Menu`、触觉、角标、安全区、键盘、生物识别、权限、选图、推送的迁移一起，尚未提交） |
 | myclash | `replace => ../mygo` | 同上；`build.noindex/` 下有旧的 mygo 源码备份，`go build ./...` 会报错，编译时排除 |
 | gorex、retty、gorex-workflows | 固定 fork 的伪版本（`80d5e6a3`、`d30cf320`） | 终端用的是自己的 `retty/internal/terminal` 副本，不依赖本仓库的 `plugins/terminal`；升级 mygo 时再检查 |
 
@@ -52,7 +52,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | `ui.InputPointerCancel` | `InputPointerUp` 带 `Canceled`、`PressCanceled` | 即「已知问题」里的两套取消 |
 | `HapticLight` 等、`hapticsModule.Play` | `mygo.Haptics.Light()` 等 | **已迁移**（`converge-940`）；#940 没有 `Soft`/`Rigid`，Miya 用 `Light` 代替 |
 | `Biometrics`、`Authentication*` 错误码 | `plugins/biometrics`：`Available`、`Authenticate(ctx, reason)` | **已迁移**：fork 新增 `plugins/biometrics`，API 照 #940（默认允许设备密码回退），暂时跑在根包 `mygo.Biometrics` 上；细分错误作为 fork 扩展（`ErrUnavailable`、`ErrNotEnrolled`、`ErrLockedOut`、`ErrPasscodeNotSet`、`ErrBusy`、`ErrInactive`、`ErrMissingPurpose`），同时包着系统的 `AuthenticationError`。根包的 `Biometrics` 换后端时删除 |
-| `RegisterPushNotifications`、`OnPushToken`、`OnNotification`、`OnPushRegistrationError` | `plugins/push`：`Register`、`OnToken`、`OnMessage`、`OnOpened` | 没有 `SetNotificationPresentationHandler`（前台展示策略） |
+| `RegisterPushNotifications`、`OnPushToken`、`OnNotification`、`OnPushRegistrationError` | `plugins/push`：`Register`、`OnToken`、`OnMessage`、`OnOpened` | **已迁移**：本地通知的点击改用上游已有的 `App.OnNotificationClick(id)`（规则 1），Miya 把跳转目标编码进通知 ID；远程推送走 fork 新增的 `plugins/push`（API 照 #940），前台展示策略作为 fork 扩展 `push.SetPresentation`。根包删除 `OnNotification`、`NotificationEvent`、`SetNotificationPresentationHandler`、`OnPushToken`、`OnPushRegistrationError`；`App.RegisterPushNotifications` 标为 Deprecated，只给插件调用（未使用的应用由链接器删掉）。插件经 `internal/pushhub` 的钩子接收事件，不导入插件的应用不链接这部分：counter-native 体积不变，hello 小 336 字节。`Configure` 在 fork 的 Android 返回 `ErrUnsupported`（没有 Firebase）；`NotificationOptions.Data` 暂时保留为 fork 扩展 |
 | `Permissions.Query/Request` | `plugins/permissionflow`：`Check`、`Request` | **已迁移**：移植 #940 对 permissionflow 的手机端改动（`Photos`、`Contacts`、`Notifications`、`Location`、`OnPhones`），iOS/Android 暂时跑在根包 `mygo.Permissions` 上（`phone.go` 做映射）；`Contacts`、`Bluetooth`、`Calendars` 在 fork 的手机后端返回 `ErrUnsupported`。根包的 `Permissions` 换后端时删除 |
 | `Dialog.Photos` | `plugins/imagepicker`：`Pick` | **已迁移**：fork 新增 `plugins/imagepicker`，API 照 #940，暂时跑在 `Dialog.Photos` 上；只支持 `Images`，`Videos`/`Any`/`Capture` 返回 `ErrUnsupported`，`Limit` 之外的副本删除 |
 | `Lifecycle`、`OnDidEnterBackground`、`OnWillEnterForeground` | `OnDidResignActive`/`OnDidBecomeActive`、`OnSaveState` | 不区分「不活跃」和「进入后台」 |

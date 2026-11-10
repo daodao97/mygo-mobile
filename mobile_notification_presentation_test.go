@@ -3,42 +3,51 @@
 package mygo
 
 import (
-	"github.com/egoist/mygo/internal/platform"
 	"testing"
+
+	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/internal/pushhub"
 )
 
-func TestNotificationPresentationAndRemoteColdLaunchData(t *testing.T) {
-	defer App.SetNotificationPresentationHandler(nil)
-	var received []NotificationEvent
-	off := App.OnNotification(func(e NotificationEvent) { received = append(received, e) })
-	defer off()
-	calls := 0
-	App.SetNotificationPresentationHandler(func(e NotificationEvent) NotificationPresentation {
-		calls++
-		if e.Source == NotificationRemote && e.Data["session"] == "active" {
+func TestNotificationReceivedReachesPushHub(t *testing.T) {
+	var got []pushhub.Event
+	pushhub.Received = func(e pushhub.Event) bool {
+		got = append(got, e)
+		if e.Data["session"] == "active" {
 			e.Data["session"] = "mutated"
-			return 0
+			return false
 		}
-		return PresentNotificationBanner | PresentNotificationList
-	})
-	onMain(func() {
-		mask := fb.DeliverNotification(platform.NotificationEvent{ID: "push", Source: "remote", Data: map[string]string{"session": "active"}})
-		if mask != 0 || received[0].Source != NotificationRemote || received[0].Data["session"] != "active" {
-			t.Error("presentation mutated payload or wasn't suppressed")
-		}
-		mask = fb.DeliverNotification(platform.NotificationEvent{ID: "other", Source: "local"})
-		if mask != uint32(PresentNotificationBanner|PresentNotificationList) {
-			t.Error("presentation options lost")
-		}
-		fb.DeliverNotification(platform.NotificationEvent{ID: "cold-launch", Source: "remote", Clicked: true, Action: "open", Data: map[string]string{"session": "cold"}})
-	})
-	if calls != 2 || len(received) != 3 || !received[2].Clicked || received[2].Action != "open" || received[2].Data["session"] != "cold" {
-		t.Fatal("action/cold-launch event lost")
+		return true
 	}
-	App.SetNotificationPresentationHandler(nil)
+	defer func() { pushhub.Received = nil }()
+	var clicked []string
+	offClick := App.OnNotificationClick(func(id string) { clicked = append(clicked, id) })
+	defer offClick()
+	data := map[string]string{"session": "active"}
 	onMain(func() {
-		if fb.DeliverNotification(platform.NotificationEvent{}) != uint32(PresentNotificationDefault) {
-			t.Error("default presentation not restored")
+		if mask := fb.DeliverNotification(platform.NotificationEvent{ID: "push", Source: "remote", Data: data}); mask != 0 {
+			t.Errorf("a notification the hook hid showed: %d", mask)
+		}
+		if mask := fb.DeliverNotification(platform.NotificationEvent{ID: "local", Source: "local"}); mask != presentAll {
+			t.Errorf("a notification the hook showed was hidden: %d", mask)
+		}
+		if mask := fb.DeliverNotification(platform.NotificationEvent{ID: "tap", Source: "remote", Clicked: true, Action: "open", Data: data}); mask != presentAll {
+			t.Errorf("a tap: %d", mask)
+		}
+	})
+	if data["session"] != "active" {
+		t.Error("the hook changed the backend's data")
+	}
+	if len(got) != 3 || !got[0].Remote || got[1].Remote || !got[2].Clicked || got[2].Action != "open" {
+		t.Fatalf("events %+v", got)
+	}
+	if len(clicked) != 1 || clicked[0] != "tap" {
+		t.Fatalf("taps did not reach OnNotificationClick: %q", clicked)
+	}
+	pushhub.Received = nil
+	onMain(func() {
+		if fb.DeliverNotification(platform.NotificationEvent{}) != presentAll {
+			t.Error("without the plugin a notification shows")
 		}
 	})
 }

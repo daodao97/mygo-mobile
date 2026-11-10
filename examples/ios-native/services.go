@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/push"
 	"github.com/egoist/mygo/ui"
 	"math"
 	"path/filepath"
@@ -73,11 +75,17 @@ func (s *demo) notificationControls(c *ui.Context) {
 	ui.Text(c, s.systemResult).FontSize(14)
 	ui.Text(c, "APNs requires a matching push entitlement and your delivery service.").FontSize(13).TextColor(c.Theme().TextMuted)
 	if ui.Button(c, "Register for push notifications").Height(44).FillWidth().Clicked() {
-		if err := mygo.App.RegisterPushNotifications(); err != nil {
-			s.notificationResult = err.Error()
-		} else {
-			s.notificationResult = "APNs registration requested"
-		}
+		s.notificationResult = "APNs registration requested"
+		go func() {
+			token, err := push.Register(context.Background())
+			s.window.Update(func() {
+				if err != nil {
+					s.notificationResult = "APNs registration: " + err.Error()
+				} else {
+					s.notificationResult = "APNs token: " + token
+				}
+			})
+		}()
 	}
 }
 func (s *demo) hapticControls(c *ui.Context) {
