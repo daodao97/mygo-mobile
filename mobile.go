@@ -6,36 +6,33 @@ import (
 	"maps"
 )
 
-// HapticFeedback is a short system feedback pattern.
-type HapticFeedback string
+// HapticsModule plays the feel of what happens on a phone's screen. Use the
+// Haptics singleton.
+type HapticsModule struct{}
 
-const (
-	HapticSelection HapticFeedback = "selection"
-	HapticLight     HapticFeedback = "light"
-	HapticMedium    HapticFeedback = "medium"
-	HapticHeavy     HapticFeedback = "heavy"
-	HapticSoft      HapticFeedback = "soft"
-	HapticRigid     HapticFeedback = "rigid"
-	HapticSuccess   HapticFeedback = "success"
-	HapticWarning   HapticFeedback = "warning"
-	HapticError     HapticFeedback = "error"
-)
+// Haptics plays the feel of what happens on a phone's screen: UIKit's
+// feedback generators on iOS, and on Android the system's haptic constants,
+// as the user's settings allow. Desktops have none. Its API is upstream
+// #940's (FORK.md, "向 #940 收敛").
+var Haptics = &HapticsModule{}
 
-// Haptics provides device feedback. A successful call does not imply the
-// hardware emitted a vibration (simulators and system settings may suppress it).
-var Haptics hapticsModule
-
-type hapticsModule struct{}
-
-func (hapticsModule) Play(kind HapticFeedback) error {
-	switch kind {
-	case HapticSelection, HapticLight, HapticMedium, HapticHeavy, HapticSoft, HapticRigid, HapticSuccess, HapticWarning, HapticError:
-	default:
-		return fmt.Errorf("mygo: unknown haptic %q", kind)
-	}
-	needsApp("Haptics.Play")
-	return onMainValue(func() error { return backend().Mobile().Haptic(string(kind)) })
+func (*HapticsModule) play(kind string) {
+	App.WhenReady(func() { _ = backend().Mobile().Haptic(kind) })
 }
+
+// Selection plays the tick of a choice changing, as a picker's wheel.
+func (h *HapticsModule) Selection() { h.play("selection") }
+
+// Light, Medium and Heavy play the impact of a thing of that weight, as a
+// button or something that lands.
+func (h *HapticsModule) Light()  { h.play("light") }
+func (h *HapticsModule) Medium() { h.play("medium") }
+func (h *HapticsModule) Heavy()  { h.play("heavy") }
+
+// Success, Warning and Error play how a task ended.
+func (h *HapticsModule) Success() { h.play("success") }
+func (h *HapticsModule) Warning() { h.play("warning") }
+func (h *HapticsModule) Error()   { h.play("error") }
 
 // StatusBarStyle controls system text; auto follows the window background.
 type StatusBarStyle string
@@ -53,18 +50,6 @@ func (a *Application) SetStatusBar(style StatusBarStyle, hidden bool) error {
 	}
 	needsApp("App.SetStatusBar")
 	return onMainValue(func() error { return backend().Mobile().SetStatusBar(string(style), hidden) })
-}
-
-// SetNotificationBadge sets the iOS app icon badge (zero clears it). Requires badge
-// authorization; failure is returned without altering the shared Dock API.
-func (a *Application) SetNotificationBadge(count int) error {
-	if count < 0 {
-		return fmt.Errorf("mygo: badge count cannot be negative")
-	}
-	needsApp("App.SetNotificationBadge")
-	ch := make(chan error, 1)
-	onMain(func() { backend().Mobile().SetBadge(count, func(err error) { deliver(ch, err) }) })
-	return await(ch)
 }
 
 // NotificationEvent contains custom string data retained by iOS. Clicked is

@@ -61,23 +61,21 @@ func TestMobileNotificationScheduleAndLaunch(t *testing.T) {
 }
 func TestMobileFeedbackStatusAndPush(t *testing.T) {
 	onMain(func() { fb.HapticCalls = nil; fb.MobileError = nil; fb.PushRegistrations = 0 })
-	if err := Haptics.Play("invalid"); err == nil {
-		t.Fatal("invalid feedback")
-	}
-	for _, kind := range []HapticFeedback{HapticSelection, HapticLight, HapticMedium, HapticHeavy, HapticSoft, HapticRigid, HapticSuccess, HapticWarning, HapticError} {
-		if err := Haptics.Play(kind); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := App.SetNotificationBadge(-1); err == nil {
-		t.Fatal("negative badge")
-	}
+	Haptics.Selection()
+	Haptics.Light()
+	Haptics.Medium()
+	Haptics.Heavy()
+	Haptics.Success()
+	Haptics.Warning()
+	Haptics.Error()
 	onMain(func() {
-		if err := App.SetNotificationBadge(3); err != nil {
-			t.Error(err)
+		want := []string{"selection", "light", "medium", "heavy", "success", "warning", "error"}
+		ok := len(fb.HapticCalls) == len(want)
+		for i := 0; ok && i < len(want); i++ {
+			ok = fb.HapticCalls[i] == want[i]
 		}
-		if fb.BadgeCount != 3 || len(fb.HapticCalls) != 9 {
-			t.Error("device services not forwarded")
+		if !ok {
+			t.Errorf("haptics not forwarded: %q", fb.HapticCalls)
 		}
 	})
 	if err := App.SetStatusBar(StatusBarLight, true); err != nil {
@@ -106,7 +104,7 @@ func TestMobileFeedbackStatusAndPush(t *testing.T) {
 	}
 	onMain(func() { fb.MobileError = platform.ErrUnsupported })
 	defer onMain(func() { fb.MobileError = nil; fb.HapticCalls = nil })
-	if !errors.Is(Haptics.Play(HapticSuccess), ErrUnsupported) || !errors.Is(App.SetNotificationBadge(0), ErrUnsupported) || !errors.Is(App.SetStatusBar(StatusBarAuto, false), ErrUnsupported) {
+	if !errors.Is(App.SetStatusBar(StatusBarAuto, false), ErrUnsupported) {
 		t.Fatal("device errors not propagated")
 	}
 }

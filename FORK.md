@@ -50,13 +50,13 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | `ui.SafeArea`、`Tester.SetSafeArea` | `Context.SafeArea()`（返回四个值）、`Tester.SetInsets` | — |
 | `ui.InputOptions`（`Keyboard`、`Return`、`Capitalization`、`Correction`）、`Element.InputOptions` | `Element.Keyboard`、`ReturnKey`、`Capitalize`、`Autocorrect`、`Autofill` | `Dismiss: KeyboardDismissInteractive` 没有对应 |
 | `ui.InputPointerCancel` | `InputPointerUp` 带 `Canceled`、`PressCanceled` | 即「已知问题」里的两套取消 |
-| `HapticLight` 等、`hapticsModule.Play` | `mygo.Haptics.Light()` 等 | — |
+| `HapticLight` 等、`hapticsModule.Play` | `mygo.Haptics.Light()` 等 | **已迁移**（`converge-940`）；#940 没有 `Soft`/`Rigid`，Miya 用 `Light` 代替 |
 | `Biometrics`、`Authentication*` 错误码 | `plugins/biometrics`：`Available`、`Authenticate(ctx, reason)` | 没有错误码分类和 `AllowDevicePasscode`（Miya 桌面解锁在用） |
 | `RegisterPushNotifications`、`OnPushToken`、`OnNotification`、`OnPushRegistrationError` | `plugins/push`：`Register`、`OnToken`、`OnMessage`、`OnOpened` | 没有 `SetNotificationPresentationHandler`（前台展示策略） |
 | `Permissions.Query/Request` | `plugins/permissionflow`：`Check`、`Request` | — |
 | `Dialog.Photos` | `plugins/imagepicker`：`Pick` | — |
 | `Lifecycle`、`OnDidEnterBackground`、`OnWillEnterForeground` | `OnDidResignActive`/`OnDidBecomeActive`、`OnSaveState` | 不区分「不活跃」和「进入后台」 |
-| `SetNotificationBadge` | `App.SetBadgeCount` | — |
+| `SetNotificationBadge` | `App.SetBadgeCount`（上游 `main` 已有，规则 1） | **已迁移**：删除 fork 的方法，Android 的 `App().SetBadge` 接到启动器角标；`SetBadgeCount` 不返回错误，未授权时角标不显示 |
 | `Router.InteractiveBack`、`Element.TouchScroll/TouchSelection/Gestures`、`GestureEvent` | #940 的触摸引擎（`touch_back.go` 边缘返回、`LongPressed`） | 通用手势（`Gestures`、捏合）没有对应，未逐项核实 |
 | `WindowOptions.ExtendIntoSafeArea` | 未找到 | 待核实 |
 

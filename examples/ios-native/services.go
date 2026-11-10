@@ -61,16 +61,8 @@ func (s *demo) notificationControls(c *ui.Context) {
 				label = "Clear badge"
 			}
 			if ui.Button(c, label).Height(44).Clicked() {
-				go func() {
-					err := mygo.App.SetNotificationBadge(count)
-					s.window.Update(func() {
-						if err != nil {
-							s.notificationResult = err.Error()
-						} else {
-							s.notificationResult = fmt.Sprintf("Badge count: %d", count)
-						}
-					})
-				}()
+				mygo.App.SetBadgeCount(count)
+				s.notificationResult = fmt.Sprintf("Badge count: %d", count)
 			}
 		}
 	})
@@ -91,14 +83,17 @@ func (s *demo) notificationControls(c *ui.Context) {
 func (s *demo) hapticControls(c *ui.Context) {
 	ui.Text(c, "Haptic Feedback").FontSize(24).Bold()
 	ui.Text(c, "Try each pattern on an iPhone. System settings and device hardware control the physical feedback.").FontSize(15).LineHeight(1.4)
-	for _, kind := range []mygo.HapticFeedback{mygo.HapticSelection, mygo.HapticLight, mygo.HapticMedium, mygo.HapticHeavy, mygo.HapticSoft, mygo.HapticRigid, mygo.HapticSuccess, mygo.HapticWarning, mygo.HapticError} {
-		if ui.Button(c, "Haptic "+string(kind)).Height(44).FillWidth().Clicked() {
-			err := mygo.Haptics.Play(kind)
-			if err != nil {
-				s.hapticResult = err.Error()
-			} else {
-				s.hapticResult = "Haptic requested: " + string(kind)
-			}
+	for _, h := range []struct {
+		name string
+		play func()
+	}{
+		{"selection", mygo.Haptics.Selection}, {"light", mygo.Haptics.Light}, {"medium", mygo.Haptics.Medium},
+		{"heavy", mygo.Haptics.Heavy}, {"success", mygo.Haptics.Success}, {"warning", mygo.Haptics.Warning},
+		{"error", mygo.Haptics.Error},
+	} {
+		if ui.Button(c, "Haptic "+h.name).Height(44).FillWidth().Clicked() {
+			h.play()
+			s.hapticResult = "Haptic requested: " + h.name
 		}
 	}
 	ui.Text(c, s.hapticResult)
