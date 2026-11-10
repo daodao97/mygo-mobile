@@ -114,10 +114,12 @@ func TestTouchBlurCancelsInputHandler(t *testing.T) {
 	tt := snapshotTester(func(c *Context) {
 		Box(c).Size(100, 100).HandleInput(func(ev InputEvent) bool {
 			switch ev.Kind {
-			case InputPointerCancel:
-				cancels++
 			case InputPointerUp:
-				releases++
+				if ev.Canceled {
+					cancels++
+				} else {
+					releases++
+				}
 			}
 			return true
 		})

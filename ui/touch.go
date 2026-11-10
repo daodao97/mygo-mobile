@@ -213,7 +213,7 @@ func (rt *engine) cancelPointer() {
 	rt.selection.dragging = false
 	if s := rt.pressed; s != nil {
 		if s.input != nil {
-			rt.deliver(s, InputEvent{Kind: InputPointerCancel, Button: rt.pressButton, Mods: rt.mods})
+			rt.deliver(s, InputEvent{Kind: InputPointerUp, Canceled: true, Button: rt.pressButton, Mods: rt.mods, Pointer: rt.pointerType, Time: rt.now()})
 		}
 		s.pressed = false
 		if s.editor != nil {

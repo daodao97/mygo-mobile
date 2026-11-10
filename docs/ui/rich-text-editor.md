@@ -40,8 +40,8 @@ link popover and the Format menu, which saves its notes as JSON.
 `EditorOptions.OnInput` can consume an event before the editor handles it.
 Return false for normal text, keys and pointer events to keep ordinary editing.
 For a custom stationary touch hold, call `TouchSelection()` on the editor and
-consume `ui.InputLongPress`, then finish on `ui.InputPointerUp` or abort on
-`ui.InputPointerCancel`. The shared UI owns the hold deadline and capture on
+consume `ui.InputLongPress`, then finish on `ui.InputPointerUp`, or abort when
+its `Canceled` is set. The shared UI owns the hold deadline and capture on
 all backends. On iOS the native text proxy continues supplying keyboard/IME
 input and selection handles, while pointer gestures stay in Go.
 

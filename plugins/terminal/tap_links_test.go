@@ -71,7 +71,7 @@ func TestTapLinksCancelAndKeepLongPressSelection(t *testing.T) {
 			case "release moved":
 				x += 20
 			case "cancel":
-				term.v.input(ui.InputEvent{Kind: ui.InputPointerCancel, X: x, Y: y})
+				term.v.input(ui.InputEvent{Kind: ui.InputPointerUp, Canceled: true, X: x, Y: y})
 			case "long press":
 				term.v.input(ui.InputEvent{Kind: ui.InputLongPress, X: x, Y: y})
 			case "scroll":

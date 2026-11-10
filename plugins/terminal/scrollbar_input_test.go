@@ -22,7 +22,7 @@ func TestScrollbarCancelStopsDragging(t *testing.T) {
 	if !v.barHeld {
 		t.Fatal("the scroll bar did not take the drag")
 	}
-	v.input(ui.InputEvent{Kind: ui.InputPointerCancel, X: 395, Y: 188})
+	v.input(ui.InputEvent{Kind: ui.InputPointerUp, Canceled: true, X: 395, Y: 188})
 	offset := func() uint64 {
 		term.mu.Lock()
 		defer term.mu.Unlock()

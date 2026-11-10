@@ -676,7 +676,7 @@ func (v *view) input(ev ui.InputEvent) bool {
 			return false
 		}
 		return true
-	case ui.InputPointerDown, ui.InputPointerUp, ui.InputPointerMove, ui.InputPointerCancel, ui.InputLongPress:
+	case ui.InputPointerDown, ui.InputPointerUp, ui.InputPointerMove, ui.InputLongPress:
 		took := v.pointerEvent(ev)
 		if a := v.rightClick; a != RightClickContextMenu {
 			// Outside pointerEvent's lock, which copying and pasting take.
@@ -1166,9 +1166,10 @@ func (v *view) pointerEvent(ev ui.InputEvent) bool {
 	if v.screen() == nil || v.cellW == 0 {
 		return false
 	}
-	if ev.Kind == ui.InputPointerCancel {
+	if ev.Kind == ui.InputPointerUp && ev.Canceled {
+		// The system or a touch gesture took the press: end it without
+		// committing it (upstream's Canceled).
 		if v.reporting {
-			ev.Kind = ui.InputPointerUp
 			v.report(ev)
 		}
 		v.selecting, v.ticking, v.linkPressed, v.barHeld = false, false, false, false

@@ -56,10 +56,9 @@ const (
 	// element leaves scrolls the scroll containers around it. Momentum
 	// marks scrolling that continues after the fingers leave a touchpad.
 	InputScroll
-	// InputPointerCancel aborts a press taken by this handler.
-	InputPointerCancel
 	// InputLongPress starts a stationary touch selection. Subsequent pointer
-	// moves and Up/Cancel are captured without focusing or opening the keyboard.
+	// moves and the Up, Canceled or not, are captured without focusing or
+	// opening the keyboard.
 	InputLongPress
 	// InputTextReplace replaces the rune range From:To in TextContext.
 	InputTextReplace

@@ -49,7 +49,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 |---|---|---|
 | `ui.SafeArea`、`Tester.SetSafeArea` | `Context.SafeArea()`（返回四个值）、`Tester.SetInsets` | **API 已迁移**（`converge-940`，Miya 用本地的 `safeArea`/`safeInsets`）。语义仍不同：#940 计入键盘、窗口根元素自动内缩；fork 只算系统边框，由 `ExtendIntoSafeArea` 控制，换后端时再对齐 |
 | `ui.InputOptions`（`Keyboard`、`Return`、`Capitalization`、`Correction`）、`Element.InputOptions` | `Element.Keyboard`、`ReturnKey`、`Capitalize`、`Autocorrect`、`Autofill` | **已迁移**（`converge-940`）：类型和常量照 #940（整数枚举，`CapitalizeAll` → `CapitalizeCharacters`，`Content*` → `Autofill*`），内部仍转成 fork 的 `platform.TextInputOptions` 字符串；删除 `KeyboardText`、`ReturnContinue`。fork 扩展保留 `KeyboardASCII` 和 `Element.KeyboardDismiss`（#940 没有对应） |
-| `ui.InputPointerCancel` | `InputPointerUp` 带 `Canceled`、`PressCanceled` | 即「已知问题」里的两套取消 |
+| `ui.InputPointerCancel` | `InputPointerUp` 带 `Canceled`、`PressCanceled` | **已迁移**（规则 1，上游 `main` 已有）：删除 `InputPointerCancel`，fork 触摸手势的 `cancelPointer` 保留原有清理（选区、编辑器、滚动拖动、拖放、hover），向元素发 `InputPointerUp{Canceled: true}`；终端插件和 Miya 改认 `Canceled` |
 | `HapticLight` 等、`hapticsModule.Play` | `mygo.Haptics.Light()` 等 | **已迁移**（`converge-940`）；#940 没有 `Soft`/`Rigid`，Miya 用 `Light` 代替 |
 | `Biometrics`、`Authentication*` 错误码 | `plugins/biometrics`：`Available`、`Authenticate(ctx, reason)` | **已迁移**：fork 新增 `plugins/biometrics`，API 照 #940（默认允许设备密码回退），暂时跑在根包 `mygo.Biometrics` 上；细分错误作为 fork 扩展（`ErrUnavailable`、`ErrNotEnrolled`、`ErrLockedOut`、`ErrPasscodeNotSet`、`ErrBusy`、`ErrInactive`、`ErrMissingPurpose`），同时包着系统的 `AuthenticationError`。根包的 `Biometrics` 换后端时删除 |
 | `RegisterPushNotifications`、`OnPushToken`、`OnNotification`、`OnPushRegistrationError` | `plugins/push`：`Register`、`OnToken`、`OnMessage`、`OnOpened` | **已迁移**：本地通知的点击改用上游已有的 `App.OnNotificationClick(id)`（规则 1），Miya 把跳转目标编码进通知 ID；远程推送走 fork 新增的 `plugins/push`（API 照 #940），前台展示策略作为 fork 扩展 `push.SetPresentation`。根包删除 `OnNotification`、`NotificationEvent`、`SetNotificationPresentationHandler`、`OnPushToken`、`OnPushRegistrationError`；`App.RegisterPushNotifications` 标为 Deprecated，只给插件调用（未使用的应用由链接器删掉）。插件经 `internal/pushhub` 的钩子接收事件，不导入插件的应用不链接这部分：counter-native 体积不变，hello 小 336 字节。`Configure` 在 fork 的 Android 返回 `ErrUnsupported`（没有 Firebase）；`NotificationOptions.Data` 暂时保留为 fork 扩展 |
@@ -158,7 +158,6 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 ## 已知问题
 
 - `android/jni/jni_textinput.go` 没有经过 gofmt。
-- 指针取消有两套：上游用 `InputEvent.Canceled`（`pointerUp(..., canceled=true)`），fork 的触摸手势（`ui/touch.go`、`ui/gesture.go`）还在用 `cancelPointer()` 发 fork 独有的 `InputPointerCancel`。按规则 1 应改成上游的 `pointerCancel`/`Canceled`，并迁移 Miya 等使用 `InputPointerCancel` 的地方，但要连同选区拖动、滚动拖动和 hover 的清理一起处理，没有在同步中顺手改。
 - 上游 macOS 的 GUI 测试不稳定（`TestPanel`、`TestContentWindowResizeRightAfterFrame` 等待超时），上游 `main` 本身也会失败；PR 中 macOS 任务失败时先对照上游 `main`。
 - 用 `go build` 单独链接 `examples/ios-native` 会缺少 `_MyGoBackgroundRefresh*` 符号，这些符号由 `mygo build` 打包时链接；检查 iOS 代码时用 `go build ./internal/ios` 和 `go vet`。
 
