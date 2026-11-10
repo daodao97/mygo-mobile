@@ -130,6 +130,8 @@ type NetworkError = platform.NetworkError
 // and DNS64 routes, which BSD sockets alone do not. Any HTTP response counts
 // as success. After a success later calls return nil at once. Desktops have
 // nothing to prepare and return nil. Canceling ctx stops the request.
+//
+// Deprecated: apps call network.Prepare (plugins/network), which calls this.
 func (n *NetworkModule) Prepare(ctx context.Context, rawURL string) error {
 	if ctx == nil {
 		return fmt.Errorf("mygo: network preparation requires a context")
