@@ -357,7 +357,7 @@ func (_handle *Context) Announce(text string) {
 }
 
 // Blur clears keyboard focus and dismisses the software keyboard. It is useful
-// for a keyboard accessory's reading-mode action; the next input tap can focus
+// for a keyboard toolbar's dismiss action; the next input tap can focus
 // its editor again.
 func (_handle *Context) Blur() {
 	_ctx := _handle.build()
@@ -1704,22 +1704,6 @@ func Image(c *Context, src ImageSource) Element {
 	}
 	_ctx.rt.beginBuild()
 	_e := coreImage(_ctx, src)
-	_ctx.rt.endBuild()
-	return wrapElement(_e)
-}
-
-// InputAccessoryBar draws actions as Go buttons, the way iOS shows an
-// InputAccessory above its keyboard, for platforms and tests without that
-// native view. It keeps the input's focus. Actions with Items open their
-// panel above the row while *expanded; a long press sends LongPressID. Draw
-// it below the focused input while it has the focus.
-func InputAccessoryBar(c *Context, actions []InputAction, expanded *bool, handler func(arg0 string)) Element {
-	_ctx := c.build()
-	if _ctx == nil {
-		return Element{}
-	}
-	_ctx.rt.beginBuild()
-	_e := coreInputAccessoryBar(_ctx, actions, expanded, handler)
 	_ctx.rt.endBuild()
 	return wrapElement(_e)
 }
@@ -5890,20 +5874,6 @@ func (_handle Element) InViewMargin(margin ...float32) bool {
 	_ctx := _node.c
 	_ = _ctx
 	return _node.InViewMargin(margin...)
-}
-
-// InputAccessory attaches actions above the iOS system keyboard while this
-// input has focus. Other platforms ignore the native controls. The handler
-// runs on the UI thread without changing text focus or committing marked text.
-// Omit the call on later frames to remove the accessory.
-func (_handle Element) InputAccessory(actions []InputAction, handler func(arg0 string)) Element {
-	_node := _handle.node()
-	if _node == nil {
-		return Element{}
-	}
-	_ctx := _node.c
-	_ = _ctx
-	return wrapElement(_node.InputAccessory(actions, handler))
 }
 
 // InputMethod sets whether the system's input methods compose text for the

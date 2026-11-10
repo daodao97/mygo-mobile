@@ -60,7 +60,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | `Router.InteractiveBack`、`Element.TouchScroll/TouchSelection/Gestures`、`GestureEvent` | #940 的触摸引擎（`touch_back.go` 边缘返回、`LongPressed`） | 通用手势（`Gestures`、捏合）没有对应，未逐项核实 |
 | `WindowOptions.ExtendIntoSafeArea` | 无开关：根元素总把安全区当 padding（`ui/runtime.go` 的 `padInsets`，窗口背景填满），贴底的纵向滚动容器延伸到底部安全区下（`extendUnderBottom`） | **已核实，fork 扩展保留**（Miya 的两个窗口在用）。换后端时 Miya 删掉 `ExtendIntoSafeArea` 和自己按 `safeArea` 做的内缩，否则缩两次；画到系统栏下的背景改由窗口背景色给 |
 
-#940 没有对应、要改写为插件的：`Microphone`（**已改写**为 `plugins/microphone`）、`Speech`（含 `RegisterProvider`，**已改写**为 `plugins/speech`）、`Scanner.ScanCode`（**已改写**为 `plugins/scanner`）、`OpenInAppBrowser`（**已改写**为 `plugins/browser`）、`InputAccessoryBar`/`InputAction`、`Network.Prepare`/`NetworkError`（**已改写**为 `plugins/network`），以及上面「缺口」列的部分。与移动端无关、不受影响的 B 类扩展：`Router.Reset/History/Transitioning`、`Network.PathStatus/OnPathChanged`、终端 `SelectOnDrag`、`ComboboxParts.Inline`、`Window.OnFirstFrame`、richtext `OnInput`/`OnPaste`/`OnCopy`、`Context.Blur`。
+#940 没有对应、要改写为插件的：`InputAccessoryBar`/`InputAction`/`ModifierLatch`（**已改写**为 `plugins/keyboardbar` 的 `Bar`/`Action`/`ModifierLatch`；2026-11-10 决定删掉 iOS 原生的 `inputAccessoryView`：`Element.InputAccessory`、`TextInputState.Accessory`/`AccessoryID`、`SurfaceInputAction` 和 `native.m` 里的 `MyGoInputAccessory`，iOS 也画 Go 栏，靠 `keyboardTop` 把内容排在键盘之上；`InputModifiers` 留在 `ui`）、`Microphone`（**已改写**为 `plugins/microphone`）、`Speech`（含 `RegisterProvider`，**已改写**为 `plugins/speech`）、`Scanner.ScanCode`（**已改写**为 `plugins/scanner`）、`OpenInAppBrowser`（**已改写**为 `plugins/browser`）、`Network.Prepare`/`NetworkError`（**已改写**为 `plugins/network`），以及上面「缺口」列的部分。与移动端无关、不受影响的 B 类扩展：`Router.Reset/History/Transitioning`、`Network.PathStatus/OnPathChanged`、终端 `SelectOnDrag`、`ComboboxParts.Inline`、`Window.OnFirstFrame`、richtext `OnInput`/`OnPaste`/`OnCopy`、`Context.Blur`。
 
 ## 差异分类
 
@@ -72,7 +72,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | `push/`（APNs、Live Activity）、`cmd/mygo` 中的 iOS 打包与扩展 | 推送发送端、`mygo push setup/status`、iOS 构建 |
 | 根包模块 | `app_group`、`background_refresh`、`biometrics`、`device`（扫码、键盘）、`lifecycle`（`OnDidEnterBackground` 等）、`microphone`（`Microphone.Start`：16 kHz 单声道 PCM 流，供自定义 `SpeechProvider` 使用；2026-11-08 从 Miya 迁入）、`mobile*`、`mobile_experience`、`permissions.go` 中的 `Permissions` 模块（桌面后端返回 unsupported）、`share`、`speech`、`push.go`、`task.go` |
 | 独立包 | `sharedstore`、`generationcache`、`async`、`backgroundtask`、`timeseries`、`ui/chart/sparkline` |
-| `ui/` | `touch*`、弹性滚动、`native_text_scope`、`input_accessory`、`input_options`、`text_input_client`、`gesture`、`router_touch`、SafeArea |
+| `ui/` | `touch*`、弹性滚动、`native_text_scope`、`input_options`、`text_input_client`、`gesture`、`router_touch`、SafeArea |
 | `plugins/terminal` | `software_keys`、`input_context`、`ActiveCursor`、`SelectionAnchor`、`InsertNewline`、`OnSubmit`、触摸选择 |
 | `Secrets` 的 iOS/Android 后端 | `internal/ios/secrets.{go,m}`、`internal/android/backend/secrets.go` 实现上游的 `platform.Secrets` |
 

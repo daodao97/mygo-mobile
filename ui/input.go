@@ -223,11 +223,6 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 		taken = rt.gestureEvent(ev)
 	case platform.SurfaceCommand:
 		rt.editEvent(editEvent{kind: editCommand, text: ev.Text, repeat: ev.Repeat})
-	case platform.SurfaceInputAction:
-		if s := rt.states[ev.ID]; s != nil && ev.ID == rt.focused && s.inputAction != nil && s.flags&(flagDisabled|flagInert) == 0 {
-			s.inputAction(ev.Text)
-			rt.requestFrame()
-		}
 	case platform.SurfaceFocus:
 		rt.windowFocused = true
 		rt.blinkStart = rt.now()
@@ -1722,7 +1717,6 @@ func (rt *engine) updateTextInput() {
 	}
 	if t.Active {
 		s := rt.states[rt.focused]
-		t.Accessory, t.AccessoryID = s.inputAccessory, rt.focused
 		if s.editor != nil {
 			ed := s.editor
 			t.ReadOnly, t.Password, t.Multiline = ed.readOnly, ed.password, ed.multiline
@@ -2015,7 +2009,7 @@ func (e *node) Focused() bool {
 }
 
 // Blur clears keyboard focus and dismisses the software keyboard. It is useful
-// for a keyboard accessory's reading-mode action; the next input tap can focus
+// for a keyboard toolbar's dismiss action; the next input tap can focus
 // its editor again.
 func (c *context) Blur() {
 	if c.rt.focused != 0 {

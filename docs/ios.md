@@ -414,25 +414,26 @@ and `ContentOneTimeCode` describe autofill semantics; password fields still
 need `.Password()`. Autofill suggestions depend on system configuration.
 Omitting `InputOptions` on a later frame restores system defaults.
 
-Custom `HandleInput`/`TextCaret` widgets can attach a keyboard action bar with
-`InputAccessory`. Each `ui.InputAction` accepts a `LongPressID`, `Selected`
-and `Locked` state; native taps and holds route their IDs to the same callback.
-The app owns modifier state and can add it to single ASCII input and control
-keys with `InputModifiers(mods, consumed)`. `consumed` runs after a handled key
-so one-shot modifiers can be released; keeping locked bits allows repeated
-combinations. Composition, candidate commits and multi-character paste are
-left intact. `ui.InputEvent.Software` identifies these virtual modifiers.
-Clear app modifier state when leaving the input session or hiding its keyboard.
-`ui.ModifierLatch` implements the usual model: `Tap` arms a modifier for one
-key (or releases it), `Lock` keeps it, `Consume` is the `InputModifiers`
-callback, and `Decorate` copies action definitions with their Selected/Locked
-state. `ui.InputAccessoryBar` draws the same actions with Go buttons, for
-desktop previews and headless tests where the native accessory is absent.
+Custom `HandleInput`/`TextCaret` widgets can take app-owned modifiers on
+single ASCII input and control keys with `InputModifiers(mods, consumed)`.
+`consumed` runs after a handled key so one-shot modifiers can be released;
+keeping locked bits allows repeated combinations. Composition, candidate
+commits and multi-character paste are left intact. `ui.InputEvent.Software`
+identifies these virtual modifiers. Clear app modifier state when leaving the
+input session or hiding its keyboard.
+
+A row of keyboard actions (Tab, Esc, Ctrl) is `plugins/keyboardbar`'s `Bar`,
+drawn with Go buttons that keep the input's focus and composition. Draw it
+at the bottom of the page while the input has the focus: the content is laid
+out above the keyboard while it shows, so the bar sits on top of it. Its
+`ModifierLatch` implements the usual model: `Tap` arms a modifier for one key
+(or releases it), `Lock` keeps it, `Consume` is the `InputModifiers` callback,
+and `Decorate` copies action definitions with their Selected/Locked state.
+Upstream's #940 has no native keyboard accessory, so MyGo draws none either.
 
 Use `KeyboardASCII` while a modifier is enabled to request the system alphabet
 keyboard, then restore the original keyboard hint. A keyboard type change
 waits until marked text is committed or cancelled, preserving ongoing IME input.
-Updating accessory selection keeps its expanded rows and the current editor.
 
 The default Go theme follows iOS Dynamic Type, darker system colors and
 Reduce Motion through `Context.Preferences`, including change notifications.

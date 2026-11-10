@@ -954,8 +954,6 @@ type state struct {
 	touchScroll      bool
 	touchSelection   bool
 	inputOptions     inputTraits
-	inputAccessory   string
-	inputAction      func(string)
 	inputModifiers   Modifiers
 	inputConsumed    func()
 	inputComposing   bool

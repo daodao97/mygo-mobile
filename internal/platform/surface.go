@@ -260,11 +260,6 @@ type TextInputState struct {
 	// leave these false and retain ownership of their own history.
 	CanUndo, CanRedo bool
 	Options          TextInputOptions
-	// Accessory is JSON describing application-defined software-keyboard
-	// actions. AccessoryID identifies their owner, including custom inputs.
-	// Desktop backends ignore the accessory while retaining text input.
-	Accessory   string
-	AccessoryID uint64
 	// Caret is the caret's rectangle, in DIPs relative to the surface.
 	Caret RectF
 	// Text is the input's text around the caret, and Start and End are the
@@ -457,8 +452,6 @@ const (
 	SurfacePresented
 	SurfaceKeyboardDismiss
 	SurfaceGesture
-	// SurfaceInputAction invokes Text on the input accessory owned by ID.
-	SurfaceInputAction
 	// SurfaceRenew reports that the native objects a GPU renderer draws
 	// into changed (Surface.Native), as a window of Windows composes its
 	// frames once it has web views: the content makes its renderer again.

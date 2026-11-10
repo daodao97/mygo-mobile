@@ -463,25 +463,26 @@ what comes before.
 
 ### Software-keyboard actions
 
-`InputAccessory` attaches a compact action row to the iOS system keyboard.
-The keyboard keeps its language, candidate input and first responder while
-an action runs. A button with `Items` expands secondary actions above the row;
-other platforms ignore the native accessory. Labels are also accessible names,
-and an optional `Symbol` uses a system symbol on iOS.
+`plugins/keyboardbar` draws a row of actions for a phone's software keyboard,
+as a terminal's Tab and Esc keys, with buttons that keep the input's focus:
+the keyboard stays up and an input method's marked text survives a tap. A
+button with `Items` opens a panel of secondary actions above the row.
 
 ```go
-field.InputAccessory([]ui.InputAction{
-    {ID: "tab", Label: "Tab"},
-    {ID: "more", Label: "More", Symbol: "ellipsis", Items: []ui.InputAction{
-        {ID: "paste", Label: "Paste"},
-    }},
-}, func(id string) {
-    // Perform the action without moving focus out of the field.
-})
+if field.Focused() {
+    keyboardbar.Bar(c, []keyboardbar.Action{
+        {ID: "tab", Label: "Tab"},
+        {ID: "more", Label: "More", Items: []keyboardbar.Action{
+            {ID: "paste", Label: "Paste"},
+        }},
+    }, &expanded, func(id string) {
+        // Perform the action without moving focus out of the field.
+    })
+}
 ```
 
-It also works on custom `HandleInput`/`TextCaret` widgets. Omitting the call
-on a later frame removes the accessory. For Go-rendered input toolbars or
+Draw it at the bottom of the page, which phones lay out above the keyboard.
+For Go-rendered input toolbars or
 selection menus, `KeepFocus` preserves the existing editor on pointer presses;
 keyboard navigation still visits those controls normally.
 Call `c.Blur()` from a dismiss action to clear input focus and return to reading
