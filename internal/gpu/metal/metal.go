@@ -27,6 +27,7 @@ import (
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/egoist/mygo/internal/gpu"
+	"github.com/egoist/mygo/internal/pacing"
 	"github.com/egoist/mygo/internal/scene"
 )
 
@@ -544,8 +545,18 @@ func New(layer uintptr) (r *Renderer, err error) {
 		if respondsTo(ml, "setMaximumDrawableCount:") {
 			send(ml, "setMaximumDrawableCount:", 3)
 		}
-		// Desktop layer changes present in the window transaction. iOS
-		// keeps asynchronous presentation and its default three drawables.
+		// Uncapped (MYGO_UNCAPPED), a drawable presents as soon as the
+		// GPU has drawn it, not at the display's next refresh, as
+		// MoltenVK's immediate present mode does: frames come as fast as
+		// they draw. The window server still composites a window once a
+		// refresh, showing the newest frame, without tearing; only a
+		// window it shows directly, full screen, may show frames torn.
+		if pacing.Uncapped && respondsTo(ml, "setDisplaySyncEnabled:") {
+			send(ml, "setDisplaySyncEnabled:", 0)
+		}
+		// The first frame shows with the window's other changes; render
+		// decides for each frame. iOS keeps asynchronous presentation and
+		// its default three drawables.
 		if runtime.GOOS != "ios" {
 			send(ml, "setPresentsWithTransaction:", 1)
 			r.synced = true

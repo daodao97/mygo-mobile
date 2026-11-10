@@ -421,11 +421,7 @@ func stageBundle(work, dir, target string) error {
 		return errors.New("the update holds no app bundle")
 	}
 	p := &stagedUpdate{work: work, bundle: filepath.Join(dir, entries[0].Name()), target: target}
-	args := []string{"-c", installAfterExit, "mygo-update", strconv.Itoa(appPid), p.target, p.bundle, p.work, strconv.FormatBool(keepPreviousBundles.Load()), p.target}
-	if len(os.Args) > 1 {
-		args = append(append(args, "--args"), os.Args[1:]...)
-	}
-	p.helper = exec.Command("/bin/sh", args...)
+	p.helper = exec.Command("/bin/sh", "-c", installAfterExit, "mygo-update", strconv.Itoa(appPid), p.target, p.bundle, p.work, strconv.FormatBool(keepPreviousBundles.Load()))
 	if err := p.helper.Start(); err != nil {
 		return err
 	}
@@ -438,15 +434,14 @@ func stageBundle(work, dir, target string) error {
 }
 
 // installAfterExit is the script of /bin/sh that installs a staged update:
-// with the pid of the app, the target, bundle and work of the update,
-// whether to keep the previous bundle, then the arguments of open, it waits
-// for the app to exit, swaps the bundles, putting the old one back if the
-// new one cannot be moved in, and
-// opens the app again when Relaunch asked for it (relaunchUpdated). Through
-// Launch Services, as openBundle, but without -n: the app has exited, and
-// the Dock gives the new version the app's tile.
+// with the pid of the app, the target, bundle and work of the update and
+// whether to keep the previous bundle, it waits for the app to exit, swaps
+// the bundles, putting the old one back if the new one cannot be moved in,
+// and opens the app again when Relaunch asked for it (relaunchUpdated),
+// with the arguments of open that work/relaunch sets: Relaunch's arguments
+// are known only then. Through Launch Services, as openBundle, but without
+// -n: the app has exited, and the Dock gives the new version the app's tile.
 const installAfterExit = `pid=$1 target=$2 new=$3 work=$4 keep=$5
-shift 5
 old="$work/old"
 if [ "$keep" = true ]; then old="$(dirname "$target")/.$(basename "$target").old-$pid"; fi
 trap '' HUP
@@ -455,16 +450,39 @@ if mv "$target" "$old"; then
 	mv "$new" "$target" || mv "$old" "$target"
 fi
 relaunch=
-if [ -e "$work/relaunch" ]; then relaunch=1; fi
+if [ -e "$work/relaunch" ]; then relaunch=1; . "$work/relaunch"; fi
 rm -rf "$work"
 if [ -n "$relaunch" ]; then exec /usr/bin/open "$@"; fi
 `
 
 // relaunchUpdated asks the helper of a staged update to open the app once
-// it has installed the update, reporting whether there is one.
-func relaunchUpdated() bool {
+// it has installed the update, with args, reporting whether there is one.
+func relaunchUpdated(args []string) bool {
 	p := pendingUpdate.Load()
-	return p != nil && os.WriteFile(filepath.Join(p.work, "relaunch"), nil, 0o644) == nil
+	return p != nil && os.WriteFile(filepath.Join(p.work, "relaunch"), []byte(setArgs(openArgs(p.target, args))), 0o644) == nil
+}
+
+// openArgs returns the arguments of /usr/bin/open that open the app bundle
+// with the arguments args.
+func openArgs(bundle string, args []string) []string {
+	if len(args) == 0 {
+		return []string{bundle}
+	}
+	return append([]string{bundle, "--args"}, args...)
+}
+
+// setArgs returns the command of /bin/sh that makes args its positional
+// parameters.
+func setArgs(args []string) string {
+	var b strings.Builder
+	b.WriteString("set --")
+	for _, a := range args {
+		b.WriteString(" '")
+		b.WriteString(strings.ReplaceAll(a, "'", `'\''`))
+		b.WriteString("'")
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 // swapFiles replaces the entries of the app directory target with those in
@@ -596,15 +614,16 @@ func runningEntry(target string) string {
 
 // relaunchNow starts the app again; it runs after the quit sequence.
 func relaunchNow() {
+	args := relaunchArguments()
 	if launchedByDev() {
-		os.Exit(devRelaunchCode)
+		devRelaunch(App.relaunchArgs)
 	}
-	if runtime.GOOS == "darwin" && (relaunchUpdated() || openBundle()) {
+	if runtime.GOOS == "darwin" && (relaunchUpdated(args) || openBundle(args)) {
 		return
 	}
 	// The executable the app started from, which an update may have
 	// replaced.
-	cmd := exec.Command(startExe, os.Args[1:]...)
+	cmd := exec.Command(startExe, args...)
 	cmd.Dir = startDir
 	if runtime.GOOS != "windows" {
 		// GUI executables on Windows have no standard streams to pass on.
@@ -615,23 +634,43 @@ func relaunchNow() {
 	}
 }
 
+// devRelaunch exits for `mygo dev` to start the build again, with args
+// unless they are nil, which it reads from the file that
+// MYGO_DEV_RELAUNCH names.
+func devRelaunch(args []string) {
+	if args != nil {
+		if devRelaunchFile == "" {
+			log.Print("mygo: this mygo dev cannot pass Relaunch's arguments to the build; update it")
+		} else if err := os.WriteFile(devRelaunchFile, devRelaunchData(args), 0o600); err != nil {
+			log.Printf("mygo: cannot pass Relaunch's arguments to mygo dev: %v", err)
+		}
+	}
+	os.Exit(devRelaunchCode)
+}
+
+// devRelaunchData is what devRelaunch writes: each argument, ended with
+// a NUL byte, which no argument holds.
+func devRelaunchData(args []string) []byte {
+	var b []byte
+	for _, a := range args {
+		b = append(append(b, a...), 0)
+	}
+	return b
+}
+
 // openBundle starts the app bundle again through Launch Services, as the
-// Dock does, reporting whether it did. A child of this process would stay
+// Dock does, with args, reporting whether it did. A child of this process would stay
 // in this instance's coalition, which has no app once this instance exits:
 // when an app that the new instance started quits, as one a terminal's
 // shell ran, loginwindow takes the coalition's other processes for that
 // app's and ends them with SIGTERM.
-func openBundle() bool {
+func openBundle(args []string) bool {
 	bundle, err := installTarget()
 	if err != nil {
 		return false
 	}
 	// -n: this instance still runs, and would only be brought forward.
-	args := []string{"-n", bundle}
-	if len(os.Args) > 1 {
-		args = append(append(args, "--args"), os.Args[1:]...)
-	}
-	return exec.Command("/usr/bin/open", args...).Run() == nil
+	return exec.Command("/usr/bin/open", append([]string{"-n"}, openArgs(bundle, args)...)...).Run() == nil
 }
 
 // cleanUpdateLeftovers removes what an update could not remove while the

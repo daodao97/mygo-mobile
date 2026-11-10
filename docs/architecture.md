@@ -109,6 +109,7 @@ a GUI dependency. See [APNs push](push.md#manage-live-activity-subscriptions).
 │   ├── watchdriver/    the goroutine that runs a backend's file watcher
 │   ├── bridge/         embeds bridge.js, built from packages/bridge
 │   ├── surface/        the connection between a window and its native UI
+│   ├── pacing/         whether frames wait for the display (MYGO_UNCAPPED)
 │   ├── scene/          display lists and glyph atlases, what renderers draw
 │   ├── media/          the contract between ui's VideoPlayer and ui/video's engines
 │   ├── text/           fonts, shaping, line breaking, editing, glyph rasterization
@@ -2050,6 +2051,13 @@ as in Tauri:
   `App.Run` returns → `OnQuit`. It is used for `App.Quit`, Cmd+Q, quit
   Apple Events, and SIGINT/SIGTERM alike (`signal_unix.go`; a second signal
   exits immediately).
+  When the OS ends the session instead (`AppHandler.Terminating`:
+  `WM_ENDSESSION` on Windows, `applicationWillTerminate:` on macOS), the
+  loop does not stop first: `Application.endSession` calls the same
+  listeners, with `QuitEvent.SessionEnding` set and what they prevent
+  ignored, then `finish`; it skips them when a quit's sequence ran or is
+  running (`quitting`, `stopping`). Linux has no such path: the session's
+  end arrives as SIGTERM.
 - Taskbar state on Windows (`taskbar.go`) lives on the window and is
   applied when Explorer sends `TaskbarButtonCreated` (first show, Explorer
   restarts), so progress and a hidden button set before showing stick.
@@ -2062,7 +2070,10 @@ as in Tauri:
   window on the way, and the normal bounds only change in the normal
   state) and when the window closes; it is saved when a window closes
   and when the app quits, if it changed, and kept for the next save when
-  saving fails. A saved window that would not show on any
+  saving fails. `App.ClearWindowStates` saves an empty map and sets
+  `windowStates.cleared`, after which windows capture nothing for the rest
+  of the run, so the quit's saves (as windows close, and in `finish`
+  before `OnQuit`) cannot bring the states back. A saved window that would not show on any
   display keeps its size and is centered. On Windows, where a window's
   position in DIPs changes with the displays' scales (`dipSpace`), and
   earlier versions' could not tell displays of different scales apart,
@@ -2100,9 +2111,16 @@ as in Tauri:
   `keyAELaunchedAsLogInItem` in the launch Apple Event instead.
 - `Relaunch` runs the quit sequence, then (after `OnQuit`, which releases
   the single instance lock) starts the executable again with the same
-  arguments and working directory. A development build exits with code 75
-  instead, and `mygo dev` starts the same build again, also when that
-  happens before it was ready.
+  arguments, or those passed to `Relaunch` in their place
+  (`relaunchArguments`), and the working directory it started in: on macOS
+  through `open -n <bundle> --args …`, or, with an update staged, through
+  the update's helper, which reads `open`'s arguments from the
+  `relaunch` file of its work directory (a `set --` line of the shell,
+  quoted), written only then. A development build exits with code 75
+  instead, after writing `Relaunch`'s arguments, each ended with a NUL
+  byte, in the file that `MYGO_DEV_RELAUNCH` names
+  (`.mygo/dev/relaunch-args`), and `mygo dev` starts the same build again
+  with them, also when that happens before it was ready.
 - Updates (`updater.go`, `internal/update`, `cmd/mygo/updates.go`), in pure
   Go on every platform. `mygo keygen` creates an Ed25519 key pair; with
   `updates` in the configuration (the public key, and a GitHub repository or a base
@@ -3211,14 +3229,29 @@ either.
   their grid areas, as auto while the tracks are sized), laying out again
   only what changed since the last frame (see below); commits the boxes to the elements'
   states with the hit list in paint order, the focus order and the labels;
-  paints a `scene.Scene`; and presents it. Input between frames goes to the
+  paints a `scene.Scene`; and presents it. The pointer finds what it is
+  over in the hit list, last first (`appendHitChain`, `contains`): an
+  element whose visible part, clipped as commit found it (`state.vx`..),
+  does not hold the point is passed by before its transform is inverted,
+  unless its scroll containers moved or a pose moved it since
+  (`state.reposed`), so that a move over a large tree costs little;
+  `TestHitFilterMatches` compares with every box tested
+  (`engine.noHitFilter`). Input between frames goes to the
   states of the last frame's elements. A release that comes with moves no
   pass read waits in the element's state (`releaseLater`) for the pass
   that reads them, which applies it as it ends (`forgetInput`): the view
   sees the element still pressed where the pointer let go, and released
   in the pass after. An element's identity hashes its
   parent's with its position or `Key`, so focus, scroll offsets, editors and
-  animations survive rebuilding. `prune` drops the states the frame did
+  animations survive rebuilding. Each pass lists the states it looks up
+  (`engine.built`, `nbuilt` of them, `lookState`, less those `unlook`
+  gives back): `forgetInput` visits those alone, `prune` looks for states
+  to drop only when the pass built fewer than there are, and the formats
+  of native drop targets are gathered only in a pass that made one
+  (`noteTarget`), so that what a frame costs past building follows what
+  it built rather than every state of a map; ui's tests check the lists
+  each frame (`checkFrames`, `checkBuilt`), its benchmarks do not.
+  `prune` drops the states the frame did
   not build (but those of pages Routers keep) and recycles them; a state
   with `Local` values that are `io.Closer`s (`state.closes`, which
   `Local` fills as it makes one, so that other states cost nothing) hands
@@ -3299,14 +3332,58 @@ either.
   glyphs, stops and words than `partsGrowth` past what the whole frame
   held. `TestRepaintPartsMatchWhole` compares the frames with those
   painted whole (`engine.noParts`). Such a frame is asked for with
-  `redraw` set, which every event of the surface clears, so that the frame
-  builds anew in case the event changed what the view shows; anything
-  asking for a frame clears it too, and the frame `Painter.After` has due
-  with it, which the frame asked for replaces: `requestFrame`,
-  `Conn.Changed` (`Window.Update`, `Invalidate`, and `After`'s timer
-  through them) and a change of the appearance. An event that asks for no
-  frame, as the pointer moving over elements that do not look at it,
-  leaves that frame due. A frame of another size, or after the text
+  `redraw` set, which every event of the surface clears (`buildNext`), so
+  that the frame builds anew in case the event changed what the view
+  shows; anything asking for a frame built anew clears it too (`askBuild`),
+  and the frame `Painter.After` has due with it, which the frame asked
+  for replaces: `requestFrame`, `Conn.Changed` (`Window.Update`,
+  `Invalidate`, and `After`'s timer through them) and a change of the
+  appearance. An event that asks for no frame, as the pointer moving over
+  elements that do not look at it, leaves that frame due.
+  A hover that only changes looks paints the last frame's elements again,
+  whole, rather than building the view (`lookDue`, `askLook`), as browsers
+  restyle and repaint for `:hover` without running a page's scripts: a
+  button the pointer comes over in a window of thousands of elements costs
+  a paint, not the whole view. `Hovered` notes who reads it: the view, as
+  it builds (`state.hoverBuilt`, reset as the pass looks the state up), or
+  painting (`hoverLook`, reset as `Painter.element` paints it), as the
+  controls' styleFns pick hovered backgrounds and borders and scroll
+  containers show their bars. `hoverNeeds` looks at the elements that
+  came under the pointer or left it alone (those hovered still see no
+  change): one read as built, showing a tip, with a `Transition` (whose
+  colors move in frames built anew), or looking at its hover
+  (`flagHover`) without having told how, builds anew, as do elements
+  following the pointer (`flagTrackPointer`) anywhere in either chain and
+  a window the inspector shows; one read only as painted paints. A frame
+  built anew asked for since (`buildAsked`) shows the hover, so none is
+  asked then, and asking for one clears `lookDue`; a move bringing other
+  modifier keys builds anew, as views may show what they do. The frame
+  that builds a scroll's rows under a still pointer paints their looks
+  already (`rehover(false)`); after it presents, a hover moved by `prune`
+  asks for a frame painting (`rehover(true)`). A styleFn, and a
+  `Transition` moving colors or shadows, change the element's colors,
+  opacity and shadows as it paints; `Painter.element` puts back those it
+  was built with once it painted (`builtStyle`), so that painting it again
+  starts from them, not from what the last painting chose (a moving
+  shadow points to the transition's own array, never into the built one).
+  `TestHoverLookPaintsAsBuilt` compares each frame painted for a hover
+  with the frame built anew, over many controls.
+  What the frame writes after the build into fields the view builds goes
+  in the journal (`ui/journal.go`): a table's, a form's and a toolbar's
+  fits, a List's offset, an attached element's origin and hiding, the
+  spans a paragraph merges from the texts inside it, the parent of exit
+  copies, and whole elements before a transition, a magic move or the
+  inspector's edits change them (`journalKeepNode`). The journal goes
+  as the next build begins, its elements built anew; it is what lets an
+  element kept to a later frame without being built again go back to
+  what it was built with (`rollback`) before that frame lays it out
+  (#1599). What the frame computes in fields of its own needs none: the
+  boxes, `world`, `ink`, the measures and layout records, the inline
+  fragments and the tree's links. ui's tests (`TestMain`) check after each
+  frame that the other fields, the journal rolled back, are what the view
+  built (`checkBuilt`, `builtcheck_test.go`, comparing their bytes and the
+  elements of their slices); `MYGO_BUILT_COLLECT=1` checks after each
+  phase and lists what changed rather than failing, to find the writer. A frame of another size, or after the text
   system forgot its layouts (`text.System.Generation`, as it lets go of
   fonts the elements' layouts hold), builds anew all the same. The timers
   the last frame built armed stay; the host arms them (`afterTimer`,
@@ -3328,9 +3405,12 @@ either.
   rate unknown (browsers), frames come at each refresh.
   While nothing of the window shows (`platform.OccludableSurface`: a macOS
   window hidden, minimized or covered by other windows, whose display link
-  still ticks, at the display's rate for half a minute, then at about 40
-  Hz; a minimized window on Linux, as GDK's `window-state-event` tells
-  on X11, and on Windows, as `WM_SIZE` does), what moves asks for no frame, and a frame asked for by a change of
+  still ticks while it is covered, at the display's rate for half a
+  minute, then at about 40 Hz, but not while it is hidden or minimized,
+  where `RequestFrame` draws the frame from the backend's queue
+  (`drawSoon`) instead; a minimized window on Linux, as GDK's `window-state-event` tells
+  on X11, and on Windows, as `WM_SIZE` does, where no `WM_PAINT` comes
+  and `RequestFrame` draws the frame from the queue as well), what moves asks for no frame, and a frame asked for by a change of
   the state waits (`holdFrame`; both `held`), as browsers draw nothing for
   windows out of sight and as Apple asks of Mac apps: the view function,
   `Draw` and the work `After` drives wait until some of the window shows.
@@ -3389,6 +3469,60 @@ either.
   `MYGO_FRAME_STATS` set, frames slower than its threshold log how long
   each part took, which path drew them, what the process allocated and
   whether the collector ran (`ui/framestats.go`).
+  With `MYGO_UNCAPPED=1`, which `internal/pacing` reads once (`Uncapped`),
+  frames wait for no refresh, for benchmarks, profiling and the least
+  latency (#1496): the next frame asked for starts once the last was
+  presented. Only the frames asked for come sooner, so an idle window
+  still draws nothing. The host holds no frame drawn in memory to the
+  refreshes (`refreshPresented`) and counts every surface's frames as
+  coming at once (`framesAtOnce`), so `Painter.AnimationFrameRate` keeps
+  its pace with the repaint timer; the backends and renderers each skip
+  their own wait: Direct3D's swap chain has no frame latency object, three
+  buffers and, where DXGI allows it, tearing, and presents every frame
+  with sync interval 0, without `waitComposed` or `waitRefresh`
+  (`internal/gpu/d3d11/uncapped.go`); macOS draws each frame from a
+  timer firing at once (`surface.frameSoon`), not the display link, into
+  a CAMetalLayer whose `displaySyncEnabled` is off; Linux tells GTK's frame
+  clock a refresh interval of a microsecond (`paceFrameClock`) and, on X11,
+  sets the GLX swap interval of the window GDK paints to 0
+  (`gl.UnsyncGLXSwaps`); browsers keep requestAnimationFrame's pace. On
+  Windows a live resize presents paced, from the window's first change of
+  size until the swap chain settles (`presentsUncapped`): no tearing, a
+  frame of a new size waiting for DWM to show it and the others for the
+  composition that shows each, as uncapped frames queued for DWM while it
+  resized the window, and one present took 2 s. Each of those waits is
+  bounded, the frame of a new size's at two refreshes, with DwmFlush called
+  on another thread (`waitShown`): called on the main thread within
+  `SetWindowPos`, it was the one wait with no bound when a present took
+  2 s at the start or end of a resize the app made. Nor does Present wait
+  long then: with no frame latency object to tell when the swap chain has
+  room, Present waited for it on the main thread, and a frame redrawn in
+  part still took 2 s in 2 resizes of 12, most likely queued behind
+  buffers DWM held. While resizing, frames present with
+  `DXGI_PRESENT_DO_NOT_WAIT`, tried for a refresh at most (`showSoon`);
+  one Present still refuses waits, unpresented, for the next composition
+  while the main thread takes its messages, or gives way to the next frame
+  drawn (`holdFrame`, `presentHeld`). One still not taken after `maxHeld`
+  (100 ms) presents without the flag, waiting as long as DXGI has it, on
+  another goroutine (`presentAside`, `goAside`), and until DXGI takes a
+  frame at once with the swap chain settled (`gaveUp`), frames stay paced
+  with the flag and the buffers resize, to settle or to grow, on another
+  goroutine too (`resizeAside`). Meanwhile the main thread makes no call
+  to the context nor the swap chain: a frame drawn then is put off, the
+  frame after waits (`Ready`), `Release` waits for the call (2 s at
+  most), and once it returned the frame after draws, or the window is
+  asked for one (`askFrame`). A resize's last frame held for good otherwise left nothing
+  drawing; dropping it and drawing on had the settle frame take 994 ms on
+  the main thread, in `ResizeBuffers` or a plain Present; and putting such
+  frames off until DXGI took one with the flag and an event query said the
+  GPU was done, waiting on nothing (0338404), put every frame off for good
+  in 4 resizes of 70: nothing the app did without waiting ended DXGI's
+  refusal, while the call that waited did, so such a call is now made, off
+  the main thread. Uncapped, the refresh period is read from DWM on
+  another goroutine (`readPeriodAside`).
+  With `MYGO_FRAME_STATS` too, the engine logs how many frames came each
+  second (`frameStats.rate`), counted anew after a pause or a frame as long
+  (250 ms), and each frame's path says uncapped.
 - **Video of the system's media framework** (`ui/video`,
   `ui/engine_video.go`, `internal/media`, `scene.Surface`). A
   `media.Engine` plays one video: AVFoundation's `AVPlayer` with an
@@ -4119,12 +4253,23 @@ either.
     for two frames as Zed's line layout cache is. Wraps are measured with
     cached advances of characters (monospaced ASCII is arithmetic) near
     the view first, a frame's budget at a time, and estimated elsewhere.
+    A character shaped alone misses the room the text engine leaves
+    around it in context, as Core Text does between Han and Latin
+    letters and around CJK punctuation in the app's language when it is
+    Chinese or Japanese (`System.SetLanguage`): laying a line out shapes
+    each row as it is painted, and ends it at an earlier place to break
+    while it is wider than the editor (`fitRow`), so lines out of view
+    may count a row too few until they show. Closing CJK punctuation
+    starts no row, nor opening punctuation ends one (`canBreak`). A new
+    generation of the text system measures and shapes everything anew.
   - *Highlighting* (`syntax.go`). A `Highlighter` follows the buffer's
     edits and gives tokens per line; the default tokenizes lines from the
     state the line above ended in (`lexer.go`, `lexers.go`), keeping the
     states, and after an edit goes on below it only until a line starts
     as it did before. A patch's texts start each hunk in state 0, at
-    lines the buffer moves with its edits (`setRestarts`). Optional
+    lines the buffer moves with its edits (`setRestarts`) and its
+    snapshots carry (`Snapshot.Restarts`), for a `Language.Highlighter`
+    to start them as well. Optional
     interfaces give a parser's structure to Select Larger, folding,
     brackets and indentation, so that tree-sitter can plug in as a
     `Language.Highlighter` without the editor changing.
@@ -4249,15 +4394,14 @@ either.
     Attachments are inline objects of the text system; a first line's
     indent is the layout's (`TextShape.Indent`), on the side the
     paragraph starts at, the right of one reading right to left.
-    `Document.VisibleParagraphs` lays out what is in view as it is read,
-    as painting does, and the paint that finds the paragraphs elsewhere
-    than read asks for a frame (`Services.Invalidate`), as
-    `ListState.Visible` builds another.
+    `Document.VisibleParagraphs` and `Document.CaretRect` lay out what is
+    in view as they are read, as painting does, and the paint that finds
+    the paragraphs or the caret elsewhere than read asks for a frame
+    (`Services.Invalidate`), as `ListState.Visible` builds another.
   - *Application paste handling.* `EditorOptions.OnPaste` intercepts keyboard,
     native Edit-menu and match-style paste before the document changes. A
     callback that consumes a paste can attach files or edit the document;
-    the view synchronizes before publishing its selection. The optional
-    `ContextMenu` builder replaces the default menu during construction.
+    the view synchronizes before publishing its selection.
   - *Formats out of the process.* The clipboard carries the editor's JSON,
     HTML (`golang.org/x/net/html` reads what is pasted) and plain text;
     browsers carry each text format through the clipboard events. The
@@ -5337,7 +5481,12 @@ either.
     or a second after it was shown without one (a timer, which only an
     idle main thread lets fire); a refresh of DWM between the present and
     its frame showing shows the background under the surface
-    (`fillUnder`). A window made hidden gets no `WM_PAINT`: its first frame is
+    (`fillUnder`). A window whose frames show through DirectComposition
+    (no redirection bitmap, as a flyout's, or web views over the frames)
+    has no pixels of its own there, and DWM would show it black for a
+    refresh or more: it stays cloaked until DWM composed the frame
+    (`DwmFlush` on a goroutine, within four refreshes at 60 Hz), then
+    uncloaks on the main thread (#1591). A window made hidden gets no `WM_PAINT`: its first frame is
     drawn while it is hidden (`drawHidden`), which makes it ready to
     show, and it uncloaks after its first `WM_PAINT` once shown; a
     present that DXGI reports occluded leaves the next frame to draw
@@ -5930,7 +6079,13 @@ make it work:
   directory and renamed into place, so the running build keeps its files.
   - Builds run with `MYGO_DEV=1`, which the core takes out of its
     environment (`dev.go`): `App.Relaunch` then exits with code 75, which
-    has `mygo dev` start the same build again. Production builds ignore it.
+    has `mygo dev` start the same build again, with the arguments
+    `Relaunch` wrote in the file of `MYGO_DEV_RELAUNCH`. Production builds ignore it.
+    `-background` adds `MYGO_DEV_BACKGROUND=1`, taken out the same way:
+    the app does not come to the front as it launches
+    (`AppOptions.Background`, macOS), and its windows show as
+    `ShowInactive` would (`backgroundShow`) until a window takes the
+    focus or the app becomes active.
     A build counts as started once its process is: one that crashes on
     start is reported as it exits.
   - *Reload.* A change (polling every 250 ms, debounced) rebuilds;

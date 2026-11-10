@@ -41,9 +41,6 @@ type EditorOptions struct {
 	// OnCopy runs before keyboard or native-menu copy/cut. Returning true
 	// consumes the command. A cut hook owns deleting its selected content.
 	OnCopy func(cut bool) bool
-	// ContextMenu replaces the editor's context menu. It is installed while
-	// the editor builds, so its default menu cannot consume the same request.
-	ContextMenu func(menu *ui.Menu)
 	// OnLink opens the URL of a link clicked, instead of the system,
 	// which opens only those ui.SafeToOpen allows.
 	OnLink func(url string)
@@ -58,6 +55,22 @@ type EditorOptions struct {
 	// quotations. What it leaves zero, and all of it when nil, takes the
 	// window theme's DefaultTheme.
 	Theme *Theme
+	// Menu builds the context menu in place of the editor's own, as
+	// Element.ContextMenu's function does: an app with a menu of its own
+	// opens it there, and adds nothing to show none of the system's.
+	Menu func(m *ui.Menu)
+	// OnKey is asked about a key pressed in the editor before the editor
+	// acts on it, as an app's popup over the text (a list of completions)
+	// takes the arrows, Enter and Escape: true takes the key, and the
+	// editor does nothing with it.
+	OnKey func(key ui.Key, mods ui.Modifiers) bool
+	// Spans is given the spans paragraph p (from 0) of style is drawn as
+	// and returns them as they are to be drawn: split, colored or spaced
+	// otherwise, their text the same, as an app colors a block of code by
+	// its language or spaces the letters. Change SpansVersion when what
+	// it does changes, for the paragraphs to be laid out again.
+	Spans        func(p int, style ParagraphStyle, spans []ui.Span) []ui.Span
+	SpansVersion int
 }
 
 // Editor creates an editor of doc's attributed text, as NSTextView edits
@@ -148,10 +161,13 @@ type view struct {
 	pressPoint ui.Point
 	// cursor is the pointer's shape where it hovers: an arrow over task
 	// boxes and the scroll bar, a hand over links, an I-beam over text.
-	cursor     ui.Cursor
-	thumb      bool
-	inView     bool // the pointer is over the editor, which shows the scroll bar
-	thumbGrab  float32
+	cursor    ui.Cursor
+	thumb     bool
+	inView    bool // the pointer is over the editor, which shows the scroll bar
+	thumbGrab float32
+	// barStyle is how the scroll bar looks, the theme's as of the last
+	// paint.
+	barStyle   ui.ScrollbarStyle
 	focused    bool
 	blinkStart time.Time
 	services   ui.Services
@@ -256,8 +272,8 @@ func build(c *ui.Context, doc *Document, options []EditorOptions, styled bool) u
 	e.HandleInput(v.input)
 	e.Cursor(v.cursor)
 	e.Draw(v.paint)
-	if v.opts.ContextMenu != nil {
-		e.ContextMenu(v.opts.ContextMenu)
+	if v.opts.Menu != nil {
+		e.ContextMenu(v.opts.Menu)
 	} else {
 		e.ContextMenu(v.menu)
 	}
@@ -427,10 +443,12 @@ type lookKey struct {
 	base  ui.Font
 	theme Theme
 	tags  bool
+	spans bool
+	ver   int
 }
 
 func (v *view) lookKey() lookKey {
-	return lookKey{base: v.base, theme: v.look.Theme, tags: v.look.tagStyle != nil}
+	return lookKey{base: v.base, theme: v.look.Theme, tags: v.look.tagStyle != nil, spans: v.opts.Spans != nil, ver: v.opts.SpansVersion}
 }
 
 // heading returns the style of headings of level, from 1.
@@ -631,6 +649,9 @@ func (v *view) paraLayout(p int) *paraView {
 	}
 	if compose != "" {
 		spans = append(spans, v.look.span(compose, typing, para.style))
+	}
+	if v.opts.Spans != nil {
+		spans = v.opts.Spans(p, para.style, spans)
 	}
 	// The indent is on the side the paragraph starts at, the right of one
 	// reading right to left.
@@ -878,6 +899,43 @@ func (d *Document) VisibleParagraphs() []ParagraphBox {
 	return boxes
 }
 
+// CaretRect returns the caret of the editor showing the document, where
+// the editor paints it in this frame, focused or not: a line as high as
+// the caret's, in DIPs from the top left of the editor's element,
+// scrolled. Place a popup at its bottom, as completions under what is
+// typed after a "/" or an "@". A frame in which the caret moves from where
+// this said, as the user types, the editor scrolls or its width changes,
+// builds another, as one that moves the paragraphs VisibleParagraphs gave
+// does, so that the popup follows. ok is false until an editor showed the
+// document, and while the caret is scrolled out of view.
+//
+// Call it on the main thread, as the view builds.
+func (d *Document) CaretRect() (r ui.Rect, ok bool) {
+	d.lock()
+	v := d.shownIn.Value()
+	d.mu.Unlock()
+	if v != nil && v.doc == d && v.width > 0 {
+		v.sync()
+		v.layout(v.width, v.viewH)
+		r, ok = v.caretRect()
+	}
+	d.lock()
+	d.readCaret, d.caretRect = true, r
+	d.mu.Unlock()
+	return r, ok
+}
+
+// caretRect returns where the editor paints the caret, in its element,
+// and whether that is in view.
+func (v *view) caretRect() (ui.Rect, bool) {
+	if len(v.paras) == 0 {
+		return ui.Rect{}, false
+	}
+	x, y, h := v.caretAt(v.caret, v.composeCaret, v.affinity)
+	r := ui.Rect{X: v.padX + x, Y: v.padY + float32(y-v.scroll), W: 1, H: h}
+	return r, r.Y+r.H > 0 && r.Y < v.rect.H
+}
+
 // boxes appends the boxes of the paragraphs in view to out.
 func (v *view) boxes(out []ParagraphBox) []ParagraphBox {
 	for i := v.first; i <= v.last && i < len(v.paras); i++ {
@@ -895,14 +953,20 @@ func (v *view) moved() {
 	d := v.doc
 	d.lock()
 	read, was := d.read, d.boxes
-	d.read = false
+	readCaret, caretWas := d.readCaret, d.caretRect
+	d.read, d.readCaret = false, false
 	d.mu.Unlock()
-	if !read {
-		return
+	if read {
+		v.placed = v.boxes(v.placed[:0])
+		if !slices.Equal(v.placed, was) {
+			v.services.Invalidate()
+			return
+		}
 	}
-	v.placed = v.boxes(v.placed[:0])
-	if !slices.Equal(v.placed, was) {
-		v.services.Invalidate()
+	if readCaret {
+		if r, _ := v.caretRect(); r != caretWas {
+			v.services.Invalidate()
+		}
 	}
 }
 

@@ -212,7 +212,7 @@ func (e *node) textParams(width float32) text.Params {
 	if ts.fixedLine && ts.lineHeight > 0 {
 		style.LineHeight = ts.lineHeight / style.FontSize()
 	}
-	p := text.Params{Text: e.text, Width: width, MaxLines: e.maxLines, Style: style, Spans: e.textSpans(), NoWrap: e.noWrap, Balance: e.balance, Pretty: e.pretty, KeepSpaces: e.keepSpaces, Ellipsis: e.ellipsis, RTL: e.rtl()}
+	p := text.Params{Text: e.text, Width: width, MaxLines: e.maxLines, Style: style, Spans: e.textSpans(), NoWrap: e.noWrap, Balance: e.balance, Pretty: e.pretty, KeepSpaces: e.keepSpaces, Ellipsis: e.ellipsis, TruncateMiddle: e.middle, RTL: e.rtl()}
 	switch {
 	case ts.align == Center:
 		p.Align = text.Center
@@ -601,6 +601,11 @@ func computeBox(e *node, w, h float32) {
 		e.layoutList(w, h)
 		return
 	}
+	if e.first == nil && !e.scrolls() {
+		// A box with nothing in it, most of a tree: its parent gave it
+		// its size, and laying out no children would change nothing.
+		return
+	}
 	if e.overflow != nil {
 		e.layoutToolbar(cw)
 	}
@@ -819,7 +824,16 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 			it := &items[i]
 			c := it.e
 			if row {
-				it.cross = heightAt(c, it.main, ch)
+				if v, ok := c.height.resolve(base(ch)); ok {
+					it.cross = c.clampH(v, ch)
+				} else if c.aspect == 0 && stretches(c, align, true) && finite(ch) && !e.wrap {
+					// It stretches to its one line, as high as the row:
+					// measuring it first would change nothing, as across
+					// a column.
+					it.cross = c.clampH(ch-it.marginCr, ch)
+				} else {
+					it.cross = heightAt(c, it.main, ch)
+				}
 			} else {
 				if v, ok := c.width.resolve(base(cw)); ok {
 					it.cross = c.clampW(v, cw)
@@ -1215,6 +1229,7 @@ func layoutAbsolute(e *node) {
 		if c.attach != 0 {
 			if c.popover != nil && c.popover.inHidden() {
 				// Nowhere to attach to: it hides with its target.
+				journalKeep(c.c.rt, &c.hidden)
 				c.hidden = true
 				continue
 			}
@@ -1353,6 +1368,10 @@ func attachedAt(c, e *node, t Rect, pw, ph, w, h float32) (x, y float32) {
 		if fy {
 			sy = 1 - sy
 		}
+		rt := c.c.rt
+		journalKeep(rt, &c.originX)
+		journalKeep(rt, &c.originY)
+		journalKeep(rt, &c.originSet)
 		c.originX, c.originY, c.originSet = sx, sy, true
 	}
 	dx, dy := c.relative(pw, ph)

@@ -197,6 +197,39 @@ func TestContentViewRunsAfterNewWindow(t *testing.T) {
 	}
 }
 
+// TestContentFirstFrameWaits checks that the window shows when its first
+// frame waits on the main thread, handling events meanwhile, as
+// Secrets.Get does: the show NewWindow left to the next turn runs within
+// that frame, and must not be lost.
+func TestContentFirstFrameWaits(t *testing.T) {
+	frames := 0
+	var fw *fake.Window
+	onMain(func() {
+		w := NewWindow(WindowOptions{Title: "Waits", Content: ui.View(func(c *ui.Context) {
+			frames++
+			if frames == 1 {
+				// A read that returns once what the main loop queued
+				// before it has run, as a keychain read of some
+				// milliseconds does.
+				release := make(chan struct{})
+				postMain(func() { close(release) })
+				offMain(func() int { <-release; return 0 })
+			}
+			ui.Text(c, "hello")
+		})})
+		t.Cleanup(w.Destroy)
+		fw = fb.Windows()[len(fb.Windows())-1]
+		// The system draws the first frame on NewWindow's turn.
+		fw.FakeSurface().Frame()
+	})
+	for range 3 {
+		onMain(func() {})
+	}
+	if frames == 0 || !fw.IsVisible() {
+		t.Errorf("after a first frame that waits: %d frames, visible %v", frames, fw.IsVisible())
+	}
+}
+
 func TestContentDrawsAndHandlesInput(t *testing.T) {
 	clicks := 0
 	view := func(c *ui.Context) {
@@ -690,4 +723,49 @@ func (st *shotState) view(c *ui.Context) {
 	ui.Box(c).Size(300, 200).Draw(func(p *ui.Painter, r ui.Rect) {
 		p.ImageRegion(st.bitmap, ui.Rect{}, r, ui.ImageOptions{})
 	})
+}
+
+// TestBackgroundShowsWindowsInactive checks an app `mygo dev
+// -background` launched: its windows, of native UI or pages, those
+// NewWindow shows and one made Hidden that the app shows itself, show
+// without the focus, which would bring the app to the front, until a
+// window of the app takes the focus, as the user clicks it; then as
+// before.
+func TestBackgroundShowsWindowsInactive(t *testing.T) {
+	last := func() *fake.Window { wins := fb.Windows(); return wins[len(wins)-1] }
+	show := func(content bool, title string) *fake.Window {
+		var fw *fake.Window
+		onMain(func() {
+			opts := WindowOptions{Title: title}
+			if content {
+				opts.Content = ui.View(func(c *ui.Context) { ui.Text(c, title) })
+			}
+			w := NewWindow(opts)
+			t.Cleanup(w.Destroy)
+			fw = last()
+		})
+		onMain(func() {}) // the next turn shows a window of native UI
+		return fw
+	}
+	for _, content := range []bool{true, false} {
+		onMain(func() { backgroundShow = true })
+		first, second := show(content, "First"), show(content, "Second")
+		var shown *fake.Window
+		onMain(func() {
+			w := NewWindow(WindowOptions{Title: "Shown", Hidden: true})
+			t.Cleanup(w.Destroy)
+			shown = last()
+			w.Show()
+		})
+		for _, fw := range []*fake.Window{first, second, shown} {
+			if !fw.IsVisible() || fw.IsFocused() {
+				t.Errorf("content %v: %s visible %v, focused %v; want shown without the focus", content, fw.Opts.Title, fw.IsVisible(), fw.IsFocused())
+			}
+		}
+		// The user clicks one.
+		onMain(func() { first.Focus() })
+		if third := show(content, "Third"); !third.IsVisible() || !third.IsFocused() {
+			t.Errorf("content %v: after a window took the focus, a new one visible %v, focused %v; want shown focused", content, third.IsVisible(), third.IsFocused())
+		}
+	}
 }

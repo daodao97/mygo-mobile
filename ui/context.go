@@ -121,6 +121,8 @@ func (c *context) reset(now time.Time, w, h float32) {
 	clear(c.rt.inputs)
 	c.rt.inputs = c.rt.inputs[:0]
 	c.rt.building = 0
+	clear(c.rt.built)
+	c.rt.built, c.rt.nbuilt = c.rt.built[:0], 0
 	clear(c.rt.actions)
 	c.rt.actions = c.rt.actions[:0]
 	c.dirty = max(c.dirty, c.used)
@@ -753,13 +755,23 @@ type state struct {
 	// text what it measured and laid out of its text (heldText).
 	lay  layoutRecord
 	text *heldText
-	// The element's box and its visible part in the last frame.
+	// The element's box and its visible part in the last frame, and
+	// whether a pose moved it since (updateWorld), which leaves the
+	// visible part as commit found it.
 	x, y, w, h     float32
 	vx, vy, vw, vh float32
+	reposed        bool
 	parent         uint64
 	router         *Router
 	routerLevel    int
 	flags          uint64
+	// hoverBuilt tells that the pass building the element read its hover
+	// (Hovered): its hover changing builds the view anew. hoverLook tells
+	// that the last frame's painting did, as a button's styleFn picks its
+	// hovered background and a scroll container shows its bars: its hover
+	// changing paints the last frame's elements again, and no more
+	// (hoverNeeds).
+	hoverBuilt, hoverLook bool
 	// ignoreInput tells that the element, or one around it, ignores the
 	// pointer and the keyboard (IgnoreInput); accessHidden, that it is
 	// out of what assistive technology reads (AccessHidden, or inert);
@@ -856,10 +868,11 @@ type state struct {
 	scrollX, scrollY float64
 	contentW         float64
 	contentH         float64
-	// barInset is the element's ScrollbarInsets, and barWidth the width
-	// of its scroll bars, its theme's ScrollbarWidth.
+	// barInset is the element's ScrollbarInsets, and barStyle how its
+	// scroll bars look, its ScrollbarStyle with the theme's zero fields
+	// filled in.
 	barInset [4]float32
-	barWidth float32
+	barStyle *ScrollbarStyle
 	// barsShown reports whether the last frame painted the element's
 	// scroll bars: they show only while it is hovered or a bar is
 	// dragged, unless it keeps them (KeepScrollbars).
@@ -1002,9 +1015,14 @@ func (rt *engine) lookState(id uint64) (s *state, built bool) {
 	} else {
 		built = s.seen == rt.frame && s.pass == rt.pass
 	}
+	if !built {
+		rt.built = append(rt.built, s)
+		rt.nbuilt++
+	}
 	s.rt = rt
 	s.lookedSeen, s.lookedPass = s.seen, s.pass
 	s.seen, s.pass = rt.frame, rt.pass
+	s.hoverBuilt = false
 	// What the element drags and takes, as this pass asks.
 	s.dragValue, s.dragFn, s.accepts = nil, nil, nil
 	s.dataSource, s.dataTarget = nil, nil
@@ -1020,9 +1038,14 @@ func (rt *engine) lookState(id uint64) (s *state, built bool) {
 // overlay, unless another element of the pass built it.
 func (rt *engine) unlook(s *state) {
 	if s.lookedSeen != 0 {
+		if s.lookedSeen != rt.frame || s.lookedPass != rt.pass {
+			// This lookup counted it built (lookState).
+			rt.nbuilt--
+		}
 		s.seen, s.pass = s.lookedSeen, s.lookedPass
 		return
 	}
+	rt.nbuilt--
 	delete(rt.states, s.id)
 	// Locals made on the element's place before Key gave it another
 	// identity are the element's no more.

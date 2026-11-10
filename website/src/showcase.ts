@@ -329,4 +329,22 @@ export const showcase: ShowcaseApp[] = [
     mode: "native",
     image: "/showcase/myvnc.jpg",
   },
+  {
+    name: "Golder",
+    description:
+      "An open-source AI coding agent in Go for macOS, Windows and Linux, with a native desktop app and a terminal/CLI. The desktop app brings project chats, file and Git review, an integrated terminal and browser together, with configurable approvals and experimental computer use.",
+    url: "https://github.com/getan/golder",
+    author: "getan",
+    mode: "native",
+    image: "/showcase/golder.jpg",
+  },
+  {
+    name: "Vole",
+    description:
+      "A disk cleaner for macOS. A treemap of what fills your disk, safe cache cleanup you review item by item, app uninstalls that take the leftovers too, and live system status in the menu bar. Built on Mole.",
+    url: "https://github.com/hellozhangran/vole",
+    author: "hellozhangran",
+    mode: "native",
+    image: "/showcase/vole.jpg",
+  },
 ]

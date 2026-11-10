@@ -570,6 +570,9 @@ func (androidShell) ShowItemInFolder(string) {}
 // Framework), not to a shell call.
 func (androidShell) TrashItem(string) error { return platform.ErrUnsupported }
 
+// PreviewItem: Android has no Quick Look panel.
+func (androidShell) PreviewItem(string) error { return platform.ErrUnsupported }
+
 // Beep does nothing: the platform has no "the application beeps" call — sound
 // belongs to a notification or to the app's own audio, which is a decision the
 // backend should not make for it.

@@ -106,7 +106,7 @@ build quits, then the new one starts, so the two never hold the same files,
 locks or web view profile at once. A build that fails to compile keeps the
 running one. Frontend changes are the dev server's to handle. Quitting the app, or
 Ctrl+C, ends mygo dev (press Ctrl+C again not to wait for the app to quit),
-and `App.Relaunch` restarts the app.
+and `App.Relaunch` restarts the app, with the arguments it passes.
 
 On a terminal, each step shows a spinner with what it does, such as the Go
 packages being compiled, then how long it took; what the dev server and the
@@ -150,6 +150,7 @@ compiles. `o` opens the page again.
 | `-port` | with `-web`, the port to serve the app at, or the next free one (default: 5174) |
 | `-open` | with `-web`, opens the app in the browser (default: true) |
 | `-lang` | runs the app in a language, such as `de` or `zh-Hant`, or a pseudo locale, `en-XA` or `ar-XB`, without changing the language it keeps; see [trying a language](i18n.md#trying-a-language) |
+| `-background` | starts the app, and again after each rebuild, without bringing it to the front: its windows show without the focus until you click one, so the editor keeps it as you save (a maximized window on Windows still takes it) |
 
 ## mygo build
 

@@ -1292,3 +1292,61 @@ func TestDiffViewEmptySide(t *testing.T) {
 		})
 	}
 }
+
+// A unified view lays out the deleted lines it shows of a long run, as of
+// a file deleted, not those above them, and gives their highlighter the
+// frames it asks for.
+func TestDiffViewDeletedRunInView(t *testing.T) {
+	var lines []string
+	for i := range 5000 {
+		lines = append(lines, "fn line"+strconv.Itoa(i))
+	}
+	var hl *parserHighlighter
+	lang := &Language{Name: "Parsed", Highlighter: func(text Snapshot, invalidate func()) Highlighter {
+		hl = &parserHighlighter{text: text, invalidate: invalidate, pending: 10}
+		return hl
+	}}
+	d := &DiffState{Old: NewBuffer(strings.Join(lines, "\n")), New: NewBuffer(""), Layout: DiffUnified}
+	d.Old.SetLanguage(lang)
+	tt := ui.NewTester(func(c *ui.Context) { DiffView(c, d).Fill() }, 600, 300)
+	tt.Frame()
+	d.SetScrollY(math.MaxFloat64)
+	tt.Frame()
+	if n := len(d.oldView.lines.m); n > 100 {
+		t.Fatalf("%d deleted lines laid out to show the last few", n)
+	}
+	if hl == nil || hl.pending > 0 {
+		t.Fatal("the deleted lines' highlighter got no frames to finish in")
+	}
+	if l := d.oldView.line(len(lines) - 1); !l.exact || len(l.toks) == 0 || l.toks[0].Kind != TokenKeyword {
+		t.Fatalf("the last deleted line's tokens: %+v, final %v", l.toks, l.exact)
+	}
+}
+
+// A unified view forgets the deleted lines it laid out, and the rows it
+// shaped, once frames stop showing them, as an editor does its own: a
+// diff scrolled through keeps no more of them than of a screen or two.
+func TestDiffViewForgetsDeletedLines(t *testing.T) {
+	var old, nw []string
+	for i := range 6000 {
+		line := "line " + strconv.Itoa(i)
+		old = append(old, line)
+		if i%3 != 0 {
+			nw = append(nw, line)
+		}
+	}
+	d := &DiffState{Old: NewBuffer(strings.Join(old, "\n")), New: NewBuffer(strings.Join(nw, "\n")), Layout: DiffUnified, ExpandUnchanged: true}
+	tt := ui.NewTester(func(c *ui.Context) { DiffView(c, d).Fill() }, 600, 300)
+	tt.Frame()
+	for y := 0.0; y < d.eds[1].view.heights.total(); y += 250 {
+		d.SetScrollY(y)
+		tt.Frame()
+	}
+	ov := &d.oldView
+	if n := len(ov.lines.m); n > 600 {
+		t.Errorf("%d of 2,000 deleted lines still laid out", n)
+	}
+	if n := len(ov.shaped.cur) + len(ov.shaped.prev); n > 600 {
+		t.Errorf("%d shaped rows of 2,000 deleted lines still kept", n)
+	}
+}

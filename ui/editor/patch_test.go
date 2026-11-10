@@ -1,7 +1,9 @@
 package editor
 
 import (
+	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -298,13 +300,14 @@ func TestPatchHunksHighlightApartStrings(t *testing.T) {
 	if k := firstKind(t, d.Old, "def g"); k != TokenString {
 		t.Fatalf("def in the docstring of a whole text is %v", k)
 	}
-	// A Language.Highlighter of the app's sees the patch's text whole.
+	// A Language.Highlighter of the app's sees the patch's text whole,
+	// with its hunks' starts, which NewTokenHighlighter restarts at.
 	var seen Snapshot
 	d.New.SetLanguage(&Language{Name: "Own", Highlighter: func(text Snapshot, _ func()) Highlighter {
 		seen = text
 		return NewTokenHighlighter(LanguageFor("app.py").Tokenizer, text)
 	}})
-	if k := firstKind(t, d.New, "def g"); k != TokenString || seen.String() != d.New.String() {
+	if k := firstKind(t, d.New, "def g"); k != TokenKeyword || seen.String() != d.New.String() {
 		t.Fatalf("def is %v with the app's highlighter of %q", k, seen.String())
 	}
 }
@@ -345,5 +348,219 @@ func TestMoveRestarts(t *testing.T) {
 	b.Edit(Edit{Start: 2, End: 4})
 	if !slices.Equal(b.restarts, []int{1}) {
 		t.Errorf("restarts %v after the line between went", b.restarts)
+	}
+}
+
+// recordingHighlighter is an app's highlighter keeping the snapshots it
+// is given.
+type recordingHighlighter struct{ texts []Snapshot }
+
+func (h *recordingHighlighter) Edit(_, new Snapshot, _ []Change)                    { h.texts = append(h.texts, new) }
+func (h *recordingHighlighter) Highlight(int, time.Duration) bool                   { return true }
+func (h *recordingHighlighter) Tokens(_ int, _ string, dst []Token) ([]Token, bool) { return dst, true }
+
+// A Language.Highlighter of the app's knows where a patch's hunks start,
+// from its snapshots, as the edits move them.
+func TestPatchRestartsOnSnapshot(t *testing.T) {
+	files, err := ParsePatch(`--- a/app.py
++++ b/app.py
+@@ -1,3 +1,3 @@
+-import os
++import sys
+ 
+ x = 1
+@@ -20,2 +20,2 @@ def f():
+-    return 1
++    return 2
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &DiffState{}
+	d.SetPatch(files[0])
+	if got := d.New.Snapshot().Restarts(); !slices.Equal(got, []int{0, 3}) {
+		t.Fatalf("snapshot's restarts %v, want [0 3]", got)
+	}
+	h := &recordingHighlighter{}
+	d.New.SetLanguage(&Language{Name: "Own", Highlighter: func(text Snapshot, _ func()) Highlighter {
+		h.texts = append(h.texts, text)
+		return h
+	}})
+	d.New.highlighter()
+	d.New.Edit(Edit{Start: 0, Text: "# top\n"})
+	d.New.highlighter()
+	if len(h.texts) != 2 {
+		t.Fatalf("%d snapshots, want 2", len(h.texts))
+	}
+	for i, want := range [][]int{{0, 3}, {0, 4}} {
+		if got := h.texts[i].Restarts(); !slices.Equal(got, want) {
+			t.Errorf("snapshot %d: restarts %v, want %v", i, got, want)
+		}
+	}
+	// A buffer of the app's own has none.
+	if got := NewBuffer("a\nb").Snapshot().Restarts(); got != nil {
+		t.Errorf("a plain buffer's restarts are %v", got)
+	}
+}
+
+// With the files, a patch's changes are its runs of - and + lines, in the
+// files' lines, though comparing the texts would align them otherwise: git
+// deleted the first "x" here, not the second.
+func TestSetPatchFilesHunks(t *testing.T) {
+	files, _ := ParsePatch(`--- a/x.txt
++++ b/x.txt
+@@ -1,4 +1,2 @@
+-x
+-y
+ x
+ z
+`)
+	d := &DiffState{}
+	if err := d.SetPatchFiles(files[0], "x\ny\nx\nz\n", "x\nz\n"); err != nil {
+		t.Fatal(err)
+	}
+	if hs := d.Hunks(); !slices.Equal(hs, []DiffHunk{{0, 2, 0, 0}}) {
+		t.Fatalf("hunks %+v, want the patch's", hs)
+	}
+	if d.Old.String() != "x\ny\nx\nz\n" || d.New.String() != "x\nz\n" {
+		t.Fatalf("texts %q, %q", d.Old.String(), d.New.String())
+	}
+}
+
+// linesPatch returns lines, "line 0" to "line n-1", as a file's text, and
+// the patch changing each of at to "changed", with three lines of context.
+func linesPatch(n int, at ...int) (old, new string, p FilePatch) {
+	a := make([]string, n)
+	for i := range a {
+		a[i] = "line " + strconv.Itoa(i)
+	}
+	b := slices.Clone(a)
+	var s strings.Builder
+	s.WriteString("--- a/x.txt\n+++ b/x.txt\n")
+	for _, i := range at {
+		b[i] = "changed"
+		lo, hi := max(0, i-3), min(n, i+4)
+		fmt.Fprintf(&s, "@@ -%d,%d +%d,%d @@\n", lo+1, hi-lo, lo+1, hi-lo)
+		for k := lo; k < hi; k++ {
+			if k == i {
+				s.WriteString("-" + a[k] + "\n+changed\n")
+			} else {
+				s.WriteString(" " + a[k] + "\n")
+			}
+		}
+	}
+	files, _ := ParsePatch(s.String())
+	return strings.Join(a, "\n") + "\n", strings.Join(b, "\n") + "\n", files[0]
+}
+
+// With the files, the unchanged lines around a patch's changes collapse
+// into separators, as in any diff, and expand to the files' lines.
+func TestSetPatchFilesCollapses(t *testing.T) {
+	old, new, p := linesPatch(100, 20, 60)
+	d := &DiffState{}
+	if err := d.SetPatchFiles(p, old, new); err != nil {
+		t.Fatal(err)
+	}
+	seps := map[int]*DiffSeparator{} // by the old line the gap starts at
+	d.RenderSeparator = func(c *ui.Context, sep ui.Element, s *DiffSeparator) {
+		seps[s.a] = s
+		DefaultSeparator(c, sep, s)
+	}
+	tt := ui.NewTester(func(c *ui.Context) { DiffView(c, d).Fill() }, 800, 2000)
+	tt.Frame()
+	tt.Frame()
+	for _, start := range []int{0, 21, 61} {
+		if s, ok := seps[start]; !ok || s.Header != "" {
+			t.Fatalf("no separator of the gap at %d: %v", start, seps)
+		}
+	}
+	if top, mid := d.LineTop(DiffNew, 5), d.LineTop(DiffNew, 10); top != mid {
+		t.Fatalf("lines 5 and 10 at %v and %v, collapsed into one separator", top, mid)
+	}
+	seps[21].ExpandAll()
+	tt.Frame()
+	if top, next := d.LineTop(DiffNew, 40), d.LineTop(DiffNew, 41); next <= top {
+		t.Fatalf("expanded lines 40 and 41 at %v and %v", top, next)
+	}
+	if n := d.sides[1].number(40); n != 41 {
+		t.Fatalf("line 40 of the new file numbered %d", n)
+	}
+	if hs := d.Hunks(); !slices.Equal(hs, []DiffHunk{{20, 21, 20, 21}, {60, 61, 60, 61}}) {
+		t.Fatalf("hunks %+v", hs)
+	}
+}
+
+// A patch that does not make the new file from the old, or a binary one,
+// returns an error and leaves the diff as it was.
+func TestSetPatchFilesMismatch(t *testing.T) {
+	old, new, p := linesPatch(10, 4)
+	d := &DiffState{Old: NewBuffer("a\n"), New: NewBuffer("b\n")}
+	cases := []struct {
+		name     string
+		p        FilePatch
+		old, new string
+	}{
+		{"another old file", p, "something else\n", new},
+		{"another new file", p, old, new + "more\n"},
+		{"binary", FilePatch{NewName: "x.png", Binary: true}, old, new},
+	}
+	for _, c := range cases {
+		if err := d.SetPatchFiles(c.p, c.old, c.new); err == nil {
+			t.Errorf("%s: no error", c.name)
+		}
+		if d.Old.String() != "a\n" || d.New.String() != "b\n" || len(d.Hunks()) != 1 {
+			t.Fatalf("%s: the diff changed to %q, %q", c.name, d.Old.String(), d.New.String())
+		}
+	}
+}
+
+// Editing the new file compares again only the lines around the edit: the
+// patch's changes elsewhere stay as git found them.
+func TestSetPatchFilesEdit(t *testing.T) {
+	tail := strings.Repeat("same\n", 40)
+	files, _ := ParsePatch(`--- a/x.txt
++++ b/x.txt
+@@ -1,5 +1,3 @@
+-x
+-y
+ x
+ z
+ same
+`)
+	d := &DiffState{}
+	if err := d.SetPatchFiles(files[0], "x\ny\nx\nz\n"+tail, "x\nz\n"+tail); err != nil {
+		t.Fatal(err)
+	}
+	end := d.New.Len()
+	d.New.Edit(Edit{Start: end, End: end, Text: "added\n"})
+	if hs := d.Hunks(); !slices.Equal(hs, []DiffHunk{{0, 2, 0, 0}, {44, 44, 42, 43}}) {
+		t.Fatalf("hunks %+v", hs)
+	}
+}
+
+// A side of no lines starts after the line its header names: an added or
+// deleted file, and the hunks of git diff -U0.
+func TestSetPatchFilesEmptySides(t *testing.T) {
+	cases := []struct {
+		name, patch, old, new string
+		want                  []DiffHunk
+	}{
+		{"added", "--- /dev/null\n+++ b/x.txt\n@@ -0,0 +1,2 @@\n+a\n+b\n", "", "a\nb\n", []DiffHunk{{0, 0, 0, 2}}},
+		{"deleted", "--- a/x.txt\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-a\n-b\n", "a\nb\n", "", []DiffHunk{{0, 2, 0, 0}}},
+		{"-U0", "--- a/x.txt\n+++ b/x.txt\n@@ -2 +1,0 @@\n-b\n@@ -3,0 +3 @@\n+d\n", "a\nb\nc\n", "a\nc\nd\n", []DiffHunk{{1, 2, 1, 1}, {3, 3, 2, 3}}},
+	}
+	for _, c := range cases {
+		files, err := ParsePatch(c.patch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := &DiffState{}
+		if err := d.SetPatchFiles(files[0], c.old, c.new); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		ui.NewTester(func(c *ui.Context) { DiffView(c, d).Fill() }, 800, 400).Frame()
+		if hs := d.Hunks(); !slices.Equal(hs, c.want) {
+			t.Errorf("%s: hunks %+v, want %+v", c.name, hs, c.want)
+		}
 	}
 }
