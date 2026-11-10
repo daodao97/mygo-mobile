@@ -16,7 +16,7 @@
 ## 规则
 
 1. **同一功能两套实现时，以上游为准。** 删除 fork 的实现，下游改用上游 API。fork 独有的功能（上游没有的）保留。
-2. **上游不需要 iOS/Android 功能。** 移动端代码不作为上游 PR 的候选；从混合提交中提取 PR 时要剥离移动端部分。
+2. **上游不收 fork 的 iOS/Android 代码。** 上游自己的移动端是 #940（见「向 #940 收敛」），fork 的移动端向它收敛。移动端代码不作为上游 PR 的候选；从混合提交中提取 PR 时要剥离移动端部分。
 3. **合并上游时**，同一功能的冲突按规则 1 解决，再迁移调用方。不要因为 fork 先做了就保留 fork 的设计。
 4. 桌面构建不使用 cgo（见 `AGENTS.md`）；移动端可以用 cgo。
 
@@ -34,6 +34,33 @@
 printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$BRANCH_WORKTREE" > /tmp/w.work
 (cd "$APP" && GOWORK=/tmp/w.work go build ./...)
 ```
+
+## 向 #940 收敛（2026-11-10 决定）
+
+上游作者的 #940（"Run apps on iOS and Android"，草稿，分支 `mobile`；#1581 把 `main` 合进它）是同一功能的另一套实现：iOS 和 Android 共用一个后端 `internal/mobile`，Go/Swift/Kotlin 通过生成的二进制协议通信（`internal/mobile/wire/gen/spec.go`），宿主内嵌在 CLI 里（`mygo dev/build/publish -platform ios|android`），需要权限或较大依赖的功能做成插件（`mygo.Native(id).Call`、`PluginView`）。它合进 `main` 后按规则 1 以它为准。在那之前分阶段收敛（2026-11-10 选定）：先保留 fork 的 iOS/Android 后端，把公开 API 改成 #940 的名字和形状，Miya 随之迁移一次；fork 独有的功能改写为插件；#940 合进 `main` 后再换后端。在那之前：
+
+- 不在下表「有对应」的领域给 fork 加新的移动端 API。
+- fork 独有、Miya 在用的移动端功能，按 #940 的插件形状（`mygo.Native`）改写为 `plugins/<name>`，以便合并后保留。
+- `ui/touch.go`、`ui/touch_text.go`、`ui/gpu_android.go` 两边同名，#940 合并时会直接冲突。
+
+用 worktree `~/.cache/mygo-pr/mobile-940`（`pr/1581`，`git fetch upstream pull/1581/head:refs/remotes/pr/1581`）对 Miya 做类型检查：Miya 用到 136 个 #940 和上游 `main` 都没有的符号，几乎都在 Miya 的 `internal/mobile`、`internal/voiceinput`。
+
+| Miya 用到的 fork API | #940 的对应 | 缺口 |
+|---|---|---|
+| `ui.SafeArea`、`Tester.SetSafeArea` | `Context.SafeArea()`（返回四个值）、`Tester.SetInsets` | — |
+| `ui.InputOptions`（`Keyboard`、`Return`、`Capitalization`、`Correction`）、`Element.InputOptions` | `Element.Keyboard`、`ReturnKey`、`Capitalize`、`Autocorrect`、`Autofill` | `Dismiss: KeyboardDismissInteractive` 没有对应 |
+| `ui.InputPointerCancel` | `InputPointerUp` 带 `Canceled`、`PressCanceled` | 即「已知问题」里的两套取消 |
+| `HapticLight` 等、`hapticsModule.Play` | `mygo.Haptics.Light()` 等 | — |
+| `Biometrics`、`Authentication*` 错误码 | `plugins/biometrics`：`Available`、`Authenticate(ctx, reason)` | 没有错误码分类和 `AllowDevicePasscode`（Miya 桌面解锁在用） |
+| `RegisterPushNotifications`、`OnPushToken`、`OnNotification`、`OnPushRegistrationError` | `plugins/push`：`Register`、`OnToken`、`OnMessage`、`OnOpened` | 没有 `SetNotificationPresentationHandler`（前台展示策略） |
+| `Permissions.Query/Request` | `plugins/permissionflow`：`Check`、`Request` | — |
+| `Dialog.Photos` | `plugins/imagepicker`：`Pick` | — |
+| `Lifecycle`、`OnDidEnterBackground`、`OnWillEnterForeground` | `OnDidResignActive`/`OnDidBecomeActive`、`OnSaveState` | 不区分「不活跃」和「进入后台」 |
+| `SetNotificationBadge` | `App.SetBadgeCount` | — |
+| `Router.InteractiveBack`、`Element.TouchScroll/TouchSelection/Gestures`、`GestureEvent` | #940 的触摸引擎（`touch_back.go` 边缘返回、`LongPressed`） | 通用手势（`Gestures`、捏合）没有对应，未逐项核实 |
+| `WindowOptions.ExtendIntoSafeArea` | 未找到 | 待核实 |
+
+#940 没有对应、要改写为插件的：`Microphone`、`Speech`（含 `RegisterProvider`）、`Scanner.ScanCode`、`OpenInAppBrowser`、`InputAccessoryBar`/`InputAction`、`Network.Prepare`/`NetworkError`，以及上面「缺口」列的部分。与移动端无关、不受影响的 B 类扩展：`Router.Reset/History/Transitioning`、`Network.PathStatus/OnPathChanged`、终端 `SelectOnDrag`、`ComboboxParts.Inline`、`Window.OnFirstFrame`、richtext `OnInput`/`OnPaste`/`OnCopy`、`Context.Blur`。
 
 ## 差异分类
 

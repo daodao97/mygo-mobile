@@ -280,9 +280,11 @@ upstream or porting fork commits, and keep it current.
   for the overlaps a merge does not flag (the same feature, no textual
   conflict), and update FORK.md: move the PRs upstream merged, drop the
   differences that are gone.
-- Upstream does not want iOS or Android code. An upstream PR carries only the
-  general part of a change, from a worktree on `upstream/main`, opened as a
-  draft whose "a human read every line" box the user ticks.
+- Upstream does not take the fork's iOS or Android code: its own mobile support
+  is #940, which the fork's converges on ("向 #940 收敛" in FORK.md). An
+  upstream PR carries only the general part of a change, from a worktree on
+  `upstream/main`, opened as a draft whose "a human read every line" box the
+  user ticks.
 
 ## Runbook
 
