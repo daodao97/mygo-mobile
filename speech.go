@@ -56,6 +56,8 @@ var speechProviders = struct {
 // RegisterProvider adds a provider, e.g. a cloud service implemented in Go.
 // The built-in "apple" provider uses iOS Speech and AVAudioEngine; other
 // backends return ErrUnsupported. Providers own authentication and capture.
+//
+// Deprecated: apps call speech.RegisterProvider (plugins/speech), which calls this.
 func (SpeechModule) RegisterProvider(name string, provider SpeechProvider) error {
 	if name == "" || strings.TrimSpace(name) != name || name == "apple" || provider == nil {
 		return errors.New("mygo: invalid speech provider")
@@ -73,6 +75,8 @@ func (SpeechModule) RegisterProvider(name string, provider SpeechProvider) error
 // start it from a worker goroutine for press-and-hold UI. Cancel ctx when the
 // user releases before authorization completes, navigates away or backgrounds.
 // No audio is saved. Default Provider is "apple"; no cloud fallback is implied.
+//
+// Deprecated: apps call speech.Start (plugins/speech), which calls this.
 func (SpeechModule) Start(ctx context.Context, o SpeechOptions) (*SpeechSession, error) {
 	if ctx == nil {
 		return nil, errors.New("mygo: speech needs a context")
@@ -205,6 +209,8 @@ func (s *SpeechSession) Cancel() {
 // Authorize requests Apple's microphone and speech permissions without starting
 // capture. Call it when opening a voice input panel so authorization dialogs do
 // not interrupt a press-and-hold gesture. Custom providers own their permissions.
+//
+// Deprecated: apps call speech.Authorize (plugins/speech), which calls this.
 func (SpeechModule) Authorize(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("mygo: speech needs a context")

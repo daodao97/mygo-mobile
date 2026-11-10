@@ -24,7 +24,7 @@
 
 | 项目 | 依赖方式 | 影响 |
 |---|---|---|
-| Miya | `go.mod` 固定 fork 的伪版本（`replace github.com/egoist/mygo => github.com/daodao97/mygo-mobile <pseudo-version>`）；本地未提交的 `go.work` 用 `replace => ../mygo` | 本地开发时 fork `main` 的改动立即生效，CI 和打包用 `go.mod` 里的伪版本：fork 改动推送后要在 Miya 升级伪版本（`GOWORK=off go mod edit -replace …@<commit> && GOWORK=off go mod tidy`），用 `GOWORK=off go build ./...` 验证。改公开 API 前先编译 Miya。2026-11-10 起固定 `daodao97/mygo-mobile` 的向 #940 收敛第二阶段的提交（见 Miya 的 `go.mod`；Miya 工作区中与 richtext `Menu`、触觉、角标、安全区、键盘、生物识别、权限、选图、推送的迁移一起，尚未提交） |
+| Miya | `go.mod` 固定 fork 的伪版本（`replace github.com/egoist/mygo => github.com/daodao97/mygo-mobile <pseudo-version>`）；本地未提交的 `go.work` 用 `replace => ../mygo` | 本地开发时 fork `main` 的改动立即生效，CI 和打包用 `go.mod` 里的伪版本：fork 改动推送后要在 Miya 升级伪版本（`GOWORK=off go mod edit -replace …@<commit> && GOWORK=off go mod tidy`），用 `GOWORK=off go build ./...` 验证。改公开 API 前先编译 Miya。2026-11-10 起固定 `daodao97/mygo-mobile` 的向 #940 收敛第三阶段的提交（见 Miya 的 `go.mod`；Miya 工作区中与 richtext `Menu`、触觉、角标、安全区、键盘、生物识别、权限、选图、推送、扫码、应用内浏览器、网络准备、麦克风、语音的迁移一起，尚未提交） |
 | myclash | `replace => ../mygo` | 同上；`build.noindex/` 下有旧的 mygo 源码备份，`go build ./...` 会报错，编译时排除 |
 | gorex、retty、gorex-workflows | 固定 fork 的伪版本（`80d5e6a3`、`d30cf320`） | 终端用的是自己的 `retty/internal/terminal` 副本，不依赖本仓库的 `plugins/terminal`；升级 mygo 时再检查 |
 
@@ -60,7 +60,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | `Router.InteractiveBack`、`Element.TouchScroll/TouchSelection/Gestures`、`GestureEvent` | #940 的触摸引擎（`touch_back.go` 边缘返回、`LongPressed`） | 通用手势（`Gestures`、捏合）没有对应，未逐项核实 |
 | `WindowOptions.ExtendIntoSafeArea` | 未找到 | 待核实 |
 
-#940 没有对应、要改写为插件的：`Microphone`、`Speech`（含 `RegisterProvider`）、`Scanner.ScanCode`（**已改写**为 `plugins/scanner`）、`OpenInAppBrowser`（**已改写**为 `plugins/browser`）、`InputAccessoryBar`/`InputAction`、`Network.Prepare`/`NetworkError`（**已改写**为 `plugins/network`），以及上面「缺口」列的部分。与移动端无关、不受影响的 B 类扩展：`Router.Reset/History/Transitioning`、`Network.PathStatus/OnPathChanged`、终端 `SelectOnDrag`、`ComboboxParts.Inline`、`Window.OnFirstFrame`、richtext `OnInput`/`OnPaste`/`OnCopy`、`Context.Blur`。
+#940 没有对应、要改写为插件的：`Microphone`（**已改写**为 `plugins/microphone`）、`Speech`（含 `RegisterProvider`，**已改写**为 `plugins/speech`）、`Scanner.ScanCode`（**已改写**为 `plugins/scanner`）、`OpenInAppBrowser`（**已改写**为 `plugins/browser`）、`InputAccessoryBar`/`InputAction`、`Network.Prepare`/`NetworkError`（**已改写**为 `plugins/network`），以及上面「缺口」列的部分。与移动端无关、不受影响的 B 类扩展：`Router.Reset/History/Transitioning`、`Network.PathStatus/OnPathChanged`、终端 `SelectOnDrag`、`ComboboxParts.Inline`、`Window.OnFirstFrame`、richtext `OnInput`/`OnPaste`/`OnCopy`、`Context.Blur`。
 
 ## 差异分类
 

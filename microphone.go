@@ -33,6 +33,8 @@ var Microphone MicrophoneModule
 // emit runs on the audio thread, one call at a time. It must not block or
 // touch the user interface, and it must not call Stop or Cancel; hand the
 // audio to another goroutine. Only one capture can run at a time.
+//
+// Deprecated: apps call microphone.Start (plugins/microphone), which calls this.
 func (MicrophoneModule) Start(ctx context.Context, emit func(MicrophoneChunk)) (*MicrophoneCapture, error) {
 	if ctx == nil || emit == nil {
 		return nil, errors.New("mygo: microphone needs a context and a callback")
