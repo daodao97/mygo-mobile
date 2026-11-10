@@ -64,7 +64,7 @@ func TestKeyboardDismissOnScroll(t *testing.T) {
 	clicks := 0
 	tt := NewTester(func(c *Context) {
 		Scroll(c).Fill().Children(func() {
-			TextInput(c, &value).Label("editor").Height(44).AutoFocus().InputOptions(InputOptions{Dismiss: KeyboardDismissOnDrag})
+			TextInput(c, &value).Label("editor").Height(44).AutoFocus().KeyboardDismiss(KeyboardDismissOnDrag)
 			for i := range 15 {
 				if Button(c, string(rune('a'+i))).Height(44).Clicked() {
 					clicks++
@@ -85,7 +85,7 @@ func TestInteractiveKeyboardKeepsFocusUntilNativeDismissal(t *testing.T) {
 	value := "draft"
 	tt := NewTester(func(c *Context) {
 		Column(c).Fill().Children(func() {
-			TextInput(c, &value).Label("editor").Height(44).AutoFocus().InputOptions(InputOptions{Dismiss: KeyboardDismissInteractive})
+			TextInput(c, &value).Label("editor").Height(44).AutoFocus().KeyboardDismiss(KeyboardDismissInteractive)
 			Button(c, "button").Height(44)
 			Box(c).Grow(1)
 		})

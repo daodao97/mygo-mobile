@@ -1,18 +1,18 @@
 package ui
 
 import (
-	"github.com/egoist/mygo/internal/platform"
 	"testing"
+
+	"github.com/egoist/mygo/internal/platform"
 )
 
 func TestInputOptionsFollowFieldAndReset(t *testing.T) {
-	value, options := "", InputOptions{Keyboard: KeyboardEmail, Return: ReturnNext, Content: ContentEmail,
-		Correction: CorrectionOff, Capitalization: CapitalizeNone}
+	value, keyboard, ret := "", KeyboardEmail, ReturnNext
 	enabled := true
 	tt := NewTester(func(c *Context) {
 		e := TextInput(c, &value).Label("Email").Width(300).AutoFocus()
 		if enabled {
-			e.InputOptions(options)
+			e.Keyboard(keyboard).ReturnKey(ret).Autofill(AutofillEmail).Autocorrect(false).Capitalize(CapitalizeNone)
 		}
 	}, 320, 200)
 	if got := tt.h.ime.Options; got.Keyboard != "email" || got.Return != "next" || got.Content != "emailAddress" || got.Correction != "off" || got.Capitalization != "none" {
@@ -22,7 +22,7 @@ func TestInputOptionsFollowFieldAndReset(t *testing.T) {
 	if value != "中文👋@example.com" {
 		t.Fatalf("keyboard hint filtered text: %q", value)
 	}
-	options.Keyboard, options.Return = KeyboardNumber, ReturnDone
+	keyboard, ret = KeyboardNumber, ReturnDone
 	tt.Frame()
 	if tt.h.ime.Options.Keyboard != "number" || tt.h.ime.Options.Return != "done" {
 		t.Fatal("changing traits was not propagated")
@@ -44,7 +44,7 @@ func TestInputReturnPreservesSubmitAndMultiline(t *testing.T) {
 			} else {
 				e = TextInput(c, &value)
 			}
-			e.InputOptions(InputOptions{Return: ReturnSend}).Width(300).AutoFocus()
+			e.ReturnKey(ReturnSend).Width(300).AutoFocus()
 			if e.Submitted() {
 				submitted = true
 			}
@@ -71,7 +71,7 @@ func TestCustomTextCaretKeyboardOptions(t *testing.T) {
 			return true
 		})
 		if enabled {
-			e.InputOptions(InputOptions{Keyboard: KeyboardASCII, Correction: CorrectionOff, Capitalization: CapitalizeNone})
+			e.Keyboard(KeyboardASCII).Autocorrect(false).Capitalize(CapitalizeNone)
 		}
 	}, 320, 200)
 	if got := tt.h.ime.Options; !tt.h.ime.Active || got.Keyboard != "ascii" || got.Correction != "off" || got.Capitalization != "none" {
@@ -90,25 +90,31 @@ func TestCustomTextCaretKeyboardOptions(t *testing.T) {
 
 func TestTextInputClientKeyboardOptions(t *testing.T) {
 	client := &primitiveClient{}
-	options := InputOptions{Keyboard: KeyboardASCII, Return: ReturnSend,
-		Correction: CorrectionOff, Capitalization: CapitalizeNone, Dismiss: KeyboardDismissOnDrag}
+	step := 0
 	tt := NewTester(func(c *Context) {
-		Box(c).Fill().HandleTextInput(client).AutoFocus().InputOptions(options)
+		e := Box(c).Fill().HandleTextInput(client).AutoFocus()
+		switch step {
+		case 0:
+			e.Keyboard(KeyboardASCII).ReturnKey(ReturnSend).Autocorrect(false).Capitalize(CapitalizeNone).KeyboardDismiss(KeyboardDismissOnDrag)
+		case 1:
+			e.Keyboard(KeyboardEmail).ReturnKey(ReturnDone)
+		}
 	}, 320, 200)
 	defer tt.rt.close()
-	if got := tt.h.ime; got.Client == nil || !got.Active || got.Options != options.nativeOptions() {
+	want := platform.TextInputOptions{Keyboard: "ascii", Return: "send", Correction: "off", Capitalization: "none", Dismiss: "on-drag"}
+	if got := tt.h.ime; got.Client == nil || !got.Active || got.Options != want {
 		t.Fatalf("client keyboard options not forwarded: %+v", got)
 	}
 	tt.Type("中文👋")
 	if client.text != "中文👋" {
 		t.Fatalf("keyboard hint changed committed text: %q", client.text)
 	}
-	options = InputOptions{Keyboard: KeyboardEmail, Return: ReturnDone}
+	step = 1
 	tt.Frame()
-	if tt.h.ime.Options != options.nativeOptions() {
+	if want := (platform.TextInputOptions{Keyboard: "email", Return: "done"}); tt.h.ime.Options != want {
 		t.Fatal("changed client keyboard options were not propagated")
 	}
-	options = InputOptions{}
+	step = 2
 	tt.Frame()
 	if tt.h.ime.Options != (platform.TextInputOptions{}) {
 		t.Fatal("client retained omitted keyboard options")

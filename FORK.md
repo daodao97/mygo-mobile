@@ -48,7 +48,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | Miya 用到的 fork API | #940 的对应 | 缺口 |
 |---|---|---|
 | `ui.SafeArea`、`Tester.SetSafeArea` | `Context.SafeArea()`（返回四个值）、`Tester.SetInsets` | **API 已迁移**（`converge-940`，Miya 用本地的 `safeArea`/`safeInsets`）。语义仍不同：#940 计入键盘、窗口根元素自动内缩；fork 只算系统边框，由 `ExtendIntoSafeArea` 控制，换后端时再对齐 |
-| `ui.InputOptions`（`Keyboard`、`Return`、`Capitalization`、`Correction`）、`Element.InputOptions` | `Element.Keyboard`、`ReturnKey`、`Capitalize`、`Autocorrect`、`Autofill` | `Dismiss: KeyboardDismissInteractive` 没有对应 |
+| `ui.InputOptions`（`Keyboard`、`Return`、`Capitalization`、`Correction`）、`Element.InputOptions` | `Element.Keyboard`、`ReturnKey`、`Capitalize`、`Autocorrect`、`Autofill` | **已迁移**（`converge-940`）：类型和常量照 #940（整数枚举，`CapitalizeAll` → `CapitalizeCharacters`，`Content*` → `Autofill*`），内部仍转成 fork 的 `platform.TextInputOptions` 字符串；删除 `KeyboardText`、`ReturnContinue`。fork 扩展保留 `KeyboardASCII` 和 `Element.KeyboardDismiss`（#940 没有对应） |
 | `ui.InputPointerCancel` | `InputPointerUp` 带 `Canceled`、`PressCanceled` | 即「已知问题」里的两套取消 |
 | `HapticLight` 等、`hapticsModule.Play` | `mygo.Haptics.Light()` 等 | **已迁移**（`converge-940`）；#940 没有 `Soft`/`Rigid`，Miya 用 `Light` 代替 |
 | `Biometrics`、`Authentication*` 错误码 | `plugins/biometrics`：`Available`、`Authenticate(ctx, reason)` | 没有错误码分类和 `AllowDevicePasscode`（Miya 桌面解锁在用） |

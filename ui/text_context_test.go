@@ -123,7 +123,7 @@ func TestCustomTextContextWithClientOnSnapshotHost(t *testing.T) {
 	tt := snapshotTester(func(c *Context) {
 		Box(c).Fill().AutoFocus().HandleTextInput(client).
 			TextCaret(Rect{W: 1, H: 20}).TextContext(func() (string, int) { return text, caret }).
-			InputOptions(InputOptions{Dismiss: KeyboardDismissOnDrag}).HandleInput(func(ev InputEvent) bool {
+			KeyboardDismiss(KeyboardDismissOnDrag).HandleInput(func(ev InputEvent) bool {
 			switch ev.Kind {
 			case InputTextReplace:
 				r := []rune(text)

@@ -25,23 +25,22 @@ func (s *demo) mobileView(c *ui.Context) {
 }
 
 func (s *demo) inputControls(c *ui.Context) {
-	options := ui.InputOptions{Return: ui.ReturnDone, Correction: ui.CorrectionOff, Capitalization: ui.CapitalizeNone}
+	keyboard, ret, autofill := ui.KeyboardEmail, ui.ReturnSend, ui.AutofillEmail
 	switch s.inputKind {
 	case "number":
-		options.Keyboard = ui.KeyboardNumber
+		keyboard, ret, autofill = ui.KeyboardNumber, ui.ReturnDone, ui.AutofillNone
 	case "decimal":
-		options.Keyboard = ui.KeyboardDecimal
+		keyboard, ret, autofill = ui.KeyboardDecimal, ui.ReturnDone, ui.AutofillNone
 	case "phone":
-		options.Keyboard = ui.KeyboardPhone
+		keyboard, ret, autofill = ui.KeyboardPhone, ui.ReturnDone, ui.AutofillNone
 	case "url":
-		options.Keyboard = ui.KeyboardURL
+		keyboard, ret, autofill = ui.KeyboardURL, ui.ReturnDone, ui.AutofillNone
 	case "code":
-		options.Keyboard, options.Content = ui.KeyboardNumber, ui.ContentOneTimeCode
-	default:
-		options.Keyboard, options.Content, options.Return = ui.KeyboardEmail, ui.ContentEmail, ui.ReturnSend
+		keyboard, ret, autofill = ui.KeyboardNumber, ui.ReturnDone, ui.AutofillOneTimeCode
 	}
 	ui.Text(c, "Keyboard: "+s.inputKind)
-	field := ui.TextInput(c, &s.inputValue).InputOptions(options).Label("Mobile field").Height(48).FillWidth()
+	field := ui.TextInput(c, &s.inputValue).Keyboard(keyboard).ReturnKey(ret).Autofill(autofill).
+		Autocorrect(false).Capitalize(ui.CapitalizeNone).Label("Mobile field").Height(48).FillWidth()
 	if field.Submitted() {
 		s.submissions++
 	}

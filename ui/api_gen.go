@@ -3947,6 +3947,31 @@ func (_handle Element) AutoFocus() Element {
 	return wrapElement(_node.AutoFocus())
 }
 
+// Autocorrect turns an on-screen keyboard's corrections and suggestions on
+// or off for a text input, on by default where the keyboard has them.
+func (_handle Element) Autocorrect(on bool) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Autocorrect(on))
+}
+
+// Autofill tells the system what a text input holds, for it to offer it
+// from its passwords and contacts, as with iOS's Passwords above the
+// keyboard.
+func (_handle Element) Autofill(k AutofillKind) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Autofill(k))
+}
+
 // BackfaceHidden hides the element, and takes it from the pointer, while
 // its 3D transform turns its back to the viewer, as CSS's
 // backface-visibility: hidden: the two faces of a card turning over, the
@@ -4243,6 +4268,17 @@ func (_handle Element) Cache() Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.Cache())
+}
+
+// Capitalize sets what an on-screen keyboard capitalizes as one types.
+func (_handle Element) Capitalize(c Capitalization) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Capitalize(c))
 }
 
 // CaretColor sets the color of the insertion caret of the text inputs in
@@ -5903,19 +5939,6 @@ func (_handle Element) InputModifiers(mods Modifiers, consumed func()) Element {
 	return wrapElement(_node.InputModifiers(mods, consumed))
 }
 
-// InputOptions supplies this frame's keyboard traits for an editable field or
-// a custom HandleInput/TextCaret element, such as a terminal. Omitting the call
-// on a subsequent frame restores the default traits.
-func (_handle Element) InputOptions(o InputOptions) Element {
-	_node := _handle.node()
-	if _node == nil {
-		return Element{}
-	}
-	_ctx := _node.c
-	_ = _ctx
-	return wrapElement(_node.InputOptions(o))
-}
-
 // InsetShadow adds an inner box shadow, as CSS's box-shadow: inset: offset
 // by x and y, blurred by blur and grown inward by spread DIPs. It shows
 // only inside the box's padding edge, within its border and rounded
@@ -6100,6 +6123,31 @@ func (_handle Element) KeyShortcuts(mods Modifiers, key Key) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.KeyShortcuts(mods, key))
+}
+
+// Keyboard chooses the on-screen keyboard's layout for a text input, on
+// phones and tablets.
+func (_handle Element) Keyboard(k KeyboardType) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Keyboard(k))
+}
+
+// KeyboardDismiss chooses how scrolling dismisses the on-screen keyboard
+// while the input has the focus. It is the fork's; #940 has no
+// counterpart.
+func (_handle Element) KeyboardDismiss(m KeyboardDismissMode) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.KeyboardDismiss(m))
 }
 
 // Keyframes plays a sequence, holding its last value when done. It starts
@@ -7362,6 +7410,19 @@ func (_handle Element) ReplaceText(start int, end int, s string) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.ReplaceText(start, end, s))
+}
+
+// ReturnKey sets what the return key of an on-screen keyboard says, for a
+// single-line input. It submits the input as Enter does; text areas keep
+// their newlines.
+func (_handle Element) ReturnKey(k ReturnKeyType) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.ReturnKey(k))
 }
 
 // Reverse lays the children out in the other direction: a Row from right

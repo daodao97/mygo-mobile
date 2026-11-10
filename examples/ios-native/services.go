@@ -101,7 +101,7 @@ func (s *demo) hapticControls(c *ui.Context) {
 func (s *demo) gestureControls(c *ui.Context) {
 	ui.Text(c, "Input & Gestures").FontSize(24).Bold()
 	ui.Text(c, "Focus the field, then drag down outside it to track the keyboard. Drag upward again before lifting to cancel.").FontSize(15).LineHeight(1.4)
-	field := ui.TextInput(c, &s.gestureValue).Label("Gesture input").Height(48).FillWidth().InputOptions(ui.InputOptions{Dismiss: ui.KeyboardDismissInteractive, Correction: ui.CorrectionOff, Capitalization: ui.CapitalizeNone})
+	field := ui.TextInput(c, &s.gestureValue).Label("Gesture input").Height(48).FillWidth().KeyboardDismiss(ui.KeyboardDismissInteractive).Autocorrect(false).Capitalize(ui.CapitalizeNone)
 	revealEditingField(c, field)
 	ui.Text(c, "Input: "+s.gestureValue)
 	ui.Text(c, "Read-only text: Hello MyGo 👋 中文").Selectable().Label("Read-only sample").FontSize(17).LineHeight(1.5)

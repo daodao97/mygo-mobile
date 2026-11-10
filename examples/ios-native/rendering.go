@@ -109,7 +109,7 @@ func (s *demo) imagesView(c *ui.Context, path string) {
 			ui.Image(c, colorSample).Grow(1).MinWidth(0).Height(100).Fit(ui.Contain).Label("Color SVG")
 		})
 		ui.Text(c, "Network Image").FontSize(20).Bold()
-		address := ui.TextInput(c, &m.url).Label("Remote image URL").InputOptions(ui.InputOptions{Keyboard: ui.KeyboardURL, Return: ui.ReturnDone, Correction: ui.CorrectionOff, Capitalization: ui.CapitalizeNone}).Height(44).FillWidth()
+		address := ui.TextInput(c, &m.url).Label("Remote image URL").Keyboard(ui.KeyboardURL).ReturnKey(ui.ReturnDone).Autocorrect(false).Capitalize(ui.CapitalizeNone).Height(44).FillWidth()
 		// Reveal on focus and keyboard/rotation resize, then allow the user
 		// to scroll freely while the field remains focused.
 		viewport := ui.Local(address, "viewport", func() inputViewport { return inputViewport{} })

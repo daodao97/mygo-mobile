@@ -953,7 +953,7 @@ type state struct {
 	takesText        bool
 	touchScroll      bool
 	touchSelection   bool
-	inputOptions     InputOptions
+	inputOptions     inputTraits
 	inputAccessory   string
 	inputAction      func(string)
 	inputModifiers   Modifiers

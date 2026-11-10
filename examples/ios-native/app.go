@@ -310,7 +310,7 @@ func (s *demo) navigationDetail(c *ui.Context, p string) {
 	ui.Scroll(c).Scrollbars(false).TrackScroll(s.pageScroll(p)).Fill().Padding(20).Gap(18).Children(func() {
 		ui.Text(c, "State Editor").FontSize(22).Bold()
 		ui.Text(c, "Drafts survive navigation. Cancel a back swipe to keep focus. Background the app to save.").FontSize(15).LineHeight(1.5)
-		ui.TextArea(c, &s.app.NavigationValue).Scrollbars(false).Label("State input").InputOptions(ui.InputOptions{Return: ui.ReturnDefault}).MinHeight(150).FillWidth()
+		ui.TextArea(c, &s.app.NavigationValue).Scrollbars(false).Label("State input").MinHeight(150).FillWidth()
 		if ui.PrimaryButton(c, "Save State").FillWidth().Height(48).Clicked() {
 			s.app.SavedValue = s.app.NavigationValue
 			s.app.Routers[s.app.Tab].Back()

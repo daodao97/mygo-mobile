@@ -19,9 +19,7 @@ func (s *demo) editingControls(c *ui.Context) {
 			s.editingResult = "Copied: " + mygo.Clipboard.ReadText()
 		}
 	})
-	area := ui.TextArea(c, &s.editingValue).Scrollbars(false).Label("Editing sample").InputOptions(ui.InputOptions{
-		Keyboard: ui.KeyboardText, Correction: ui.CorrectionOff, Capitalization: ui.CapitalizeNone,
-	}).Height(120).FillWidth()
+	area := ui.TextArea(c, &s.editingValue).Scrollbars(false).Label("Editing sample").Autocorrect(false).Capitalize(ui.CapitalizeNone).Height(120).FillWidth()
 	revealEditingField(c, area)
 	if s.editingValue == "" {
 		ui.Text(c, "Editor is empty")
@@ -39,7 +37,7 @@ func (s *demo) editingControls(c *ui.Context) {
 		s.compositionValue = ""
 	}
 	ui.Text(c, "Committed input: "+s.compositionValue).FontSize(14)
-	input := ui.TextInput(c, &s.compositionValue).Label("Composition input").Height(48).FillWidth().InputOptions(ui.InputOptions{Keyboard: ui.KeyboardText, Correction: ui.CorrectionOff, Capitalization: ui.CapitalizeNone})
+	input := ui.TextInput(c, &s.compositionValue).Label("Composition input").Height(48).FillWidth().Autocorrect(false).Capitalize(ui.CapitalizeNone)
 	revealEditingField(c, input)
 }
 

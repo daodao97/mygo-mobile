@@ -68,7 +68,7 @@ func TestCustomTouchScrollDismissesKeyboardAndSurvivesResize(t *testing.T) {
 	for _, dy := range []float32{-40, 40} {
 		var total float32
 		tt := NewTester(func(c *Context) {
-			Box(c).Fill().Focusable().TouchSelection().TextCaret(Rect{W: 1, H: 20}).InputOptions(InputOptions{Dismiss: KeyboardDismissOnDrag}).HandleInput(func(ev InputEvent) bool {
+			Box(c).Fill().Focusable().TouchSelection().TextCaret(Rect{W: 1, H: 20}).KeyboardDismiss(KeyboardDismissOnDrag).HandleInput(func(ev InputEvent) bool {
 				if ev.Kind == InputScroll {
 					total += ev.DY
 				}
@@ -97,7 +97,7 @@ func TestCustomTouchScrollDismissesKeyboardAndSurvivesResize(t *testing.T) {
 func TestHorizontalPanAndLongPressKeepKeyboard(t *testing.T) {
 	for _, hold := range []bool{false, true} {
 		tt := NewTester(func(c *Context) {
-			Box(c).Fill().Focusable().TouchSelection().TextCaret(Rect{W: 1, H: 20}).InputOptions(InputOptions{Dismiss: KeyboardDismissOnDrag}).HandleInput(func(ev InputEvent) bool { return true })
+			Box(c).Fill().Focusable().TouchSelection().TextCaret(Rect{W: 1, H: 20}).KeyboardDismiss(KeyboardDismissOnDrag).HandleInput(func(ev InputEvent) bool { return true })
 		}, 320, 240)
 		now := time.Now()
 		tt.rt.clock = func() time.Time { return now }
@@ -121,7 +121,7 @@ func TestHorizontalPanAndLongPressKeepKeyboard(t *testing.T) {
 func TestNativeTouchPanDismissesKeyboardOnlyInOnDragMode(t *testing.T) {
 	for _, mode := range []KeyboardDismissMode{KeyboardDismissNone, KeyboardDismissInteractive, KeyboardDismissOnDrag} {
 		tt := NewTester(func(c *Context) {
-			Box(c).Fill().AutoFocus().TextCaret(Rect{W: 1, H: 20}).InputOptions(InputOptions{Dismiss: mode}).HandleInput(func(ev InputEvent) bool { return true })
+			Box(c).Fill().AutoFocus().TextCaret(Rect{W: 1, H: 20}).KeyboardDismiss(mode).HandleInput(func(ev InputEvent) bool { return true })
 		}, 320, 240)
 		tt.send(platform.SurfaceEvent{Kind: platform.PointerScroll, X: 120, Y: 100, DY: 20, Precise: true})
 		if !tt.h.ime.Active {
@@ -140,7 +140,7 @@ func TestTextInputClientTouchScrollDismissesKeyboard(t *testing.T) {
 		var total float32
 		tt := NewTester(func(c *Context) {
 			Box(c).Fill().HandleTextInput(client).TouchSelection().
-				InputOptions(InputOptions{Dismiss: KeyboardDismissOnDrag}).HandleInput(func(ev InputEvent) bool {
+				KeyboardDismiss(KeyboardDismissOnDrag).HandleInput(func(ev InputEvent) bool {
 				if ev.Kind == InputScroll {
 					total += ev.DY
 				}
