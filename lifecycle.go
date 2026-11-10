@@ -41,13 +41,15 @@ func (a *Application) OnLifecycleChanged(fn func(LifecycleState)) func() {
 	return a.onLifecycleChanged.add(fn, false)
 }
 
-// OnDidEnterBackground runs before registered state is saved. Keep callbacks
+// OnDidEnterBackground runs before registered state is saved, right before
+// Power.OnSuspend's listeners, which is how upstream's #940 reports it. Keep callbacks
 // short; this is not an unrestricted background execution grant.
 func (a *Application) OnDidEnterBackground(fn func()) func() {
 	return a.onDidEnterBackground.add(fn, false)
 }
 
-// OnWillEnterForeground runs before the app becomes active again.
+// OnWillEnterForeground runs before the app becomes active again, right
+// before Power.OnResume's listeners (#940's way to hear of it).
 func (a *Application) OnWillEnterForeground(fn func()) func() {
 	return a.onWillEnterForeground.add(fn, false)
 }

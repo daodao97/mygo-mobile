@@ -790,12 +790,16 @@ func (appHandler) DidResignActive() {
 func (appHandler) DidEnterBackground() {
 	if App.setLifecycle(LifecycleBackground) {
 		fire(&App.onDidEnterBackground)
+		// As #940 reports a phone's app leaving for the background: the
+		// system suspending it, where it may not run again.
+		Power.event("suspend")
 		App.checkpoint()
 	}
 }
 func (appHandler) WillEnterForeground() {
 	if App.setLifecycle(LifecycleInactive) {
 		fire(&App.onWillEnterForeground)
+		Power.event("resume")
 	}
 }
 func (appHandler) OpenURLs(urls []string) {

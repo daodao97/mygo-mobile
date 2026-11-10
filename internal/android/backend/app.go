@@ -57,6 +57,7 @@ type Backend struct {
 	h              platform.AppHandler
 	lifecycleKind  int
 	lifecycleKnown bool
+	active         bool // between onResume and onPause, for App.IsActive (pump)
 	preferences    platform.Preferences
 	urls           []string
 

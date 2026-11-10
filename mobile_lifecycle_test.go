@@ -230,6 +230,11 @@ func TestBackgroundCheckpointAndLifecycle(t *testing.T) {
 	defer offBG()
 	offFG := App.OnWillEnterForeground(func() { foregrounds++ })
 	defer offFG()
+	suspends, resumes := 0, 0
+	offS := Power.OnSuspend(func() { suspends++ })
+	defer offS()
+	offR := Power.OnResume(func() { resumes++ })
+	defer offR()
 	onMain(func() {
 		h := appHandler{}
 		h.DidBecomeActive()
@@ -253,8 +258,8 @@ func TestBackgroundCheckpointAndLifecycle(t *testing.T) {
 	onMain(func() { appHandler{}.WillEnterForeground(); appHandler{}.DidBecomeActive() })
 	onMain(func() {
 		want := []LifecycleState{LifecycleInactive, LifecycleBackground, LifecycleInactive, LifecycleActive}
-		if !reflect.DeepEqual(states, want) || backgrounds != 1 || foregrounds != 1 {
-			t.Errorf("lifecycle = %v, background %d, foreground %d", states, backgrounds, foregrounds)
+		if !reflect.DeepEqual(states, want) || backgrounds != 1 || foregrounds != 1 || suspends != 1 || resumes != 1 {
+			t.Errorf("lifecycle = %v, background %d, foreground %d, suspend %d, resume %d", states, backgrounds, foregrounds, suspends, resumes)
 		}
 	})
 	before, _ := os.ReadFile(file)

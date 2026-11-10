@@ -29,6 +29,12 @@ func (b *Backend) OnLifecycle(kind int) {
 // App.Run, and the window it would focus does not exist yet.
 func (b *Backend) lifecycle(kind int) {
 	b.lifecycleKind, b.lifecycleKnown = kind, true
+	switch kind {
+	case lifecycleResume:
+		b.active = true
+	case lifecyclePause, lifecycleStop:
+		b.active = false
+	}
 	h := b.handler()
 	if h == nil || !b.readyFired.Load() {
 		return

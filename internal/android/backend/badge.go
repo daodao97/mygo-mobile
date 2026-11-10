@@ -32,6 +32,10 @@ func (a androidApp) SetBadge(label string) {
 	androidMobile{a.b}.SetBadge(n, func(error) {})
 }
 
+// IsActive reports whether the Activity has the foreground, between its
+// onResume and its onPause, as iOS's app reports its scene.
+func (a androidApp) IsActive() bool { return a.b.active }
+
 // Badge returns the label SetBadge last showed.
 func (androidApp) Badge() string {
 	if n := badge.Load(); n > 0 {

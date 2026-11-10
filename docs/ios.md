@@ -616,7 +616,10 @@ UIKit owns one `UIWindowScene`. A temporary interruption changes activity to
 `inactive`; entering the background changes it to `background`. Returning
 passes through `inactive` before `active`. Register `App.OnLifecycleChanged`,
 `App.OnDidEnterBackground` and `App.OnWillEnterForeground` before `App.Run`.
-`App.Lifecycle()` reads the current state from any goroutine. Readiness is
+`App.Lifecycle()` reads the current state from any goroutine. Upstream's #940
+has no such state; code written for it hears the same moments through
+`Power.OnSuspend` (after `App.OnDidEnterBackground`), `Power.OnResume` (after
+`App.OnWillEnterForeground`) and `App.IsActive`, which MyGo reports too. Readiness is
 separate: `App.WhenReady` constructs content once for the Go process.
 
 Backgrounding pauses display ticks and cancels the active touch. If UIKit
