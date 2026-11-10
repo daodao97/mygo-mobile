@@ -51,7 +51,7 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 | `ui.InputOptions`（`Keyboard`、`Return`、`Capitalization`、`Correction`）、`Element.InputOptions` | `Element.Keyboard`、`ReturnKey`、`Capitalize`、`Autocorrect`、`Autofill` | **已迁移**（`converge-940`）：类型和常量照 #940（整数枚举，`CapitalizeAll` → `CapitalizeCharacters`，`Content*` → `Autofill*`），内部仍转成 fork 的 `platform.TextInputOptions` 字符串；删除 `KeyboardText`、`ReturnContinue`。fork 扩展保留 `KeyboardASCII` 和 `Element.KeyboardDismiss`（#940 没有对应） |
 | `ui.InputPointerCancel` | `InputPointerUp` 带 `Canceled`、`PressCanceled` | 即「已知问题」里的两套取消 |
 | `HapticLight` 等、`hapticsModule.Play` | `mygo.Haptics.Light()` 等 | **已迁移**（`converge-940`）；#940 没有 `Soft`/`Rigid`，Miya 用 `Light` 代替 |
-| `Biometrics`、`Authentication*` 错误码 | `plugins/biometrics`：`Available`、`Authenticate(ctx, reason)` | 没有错误码分类和 `AllowDevicePasscode`（Miya 桌面解锁在用） |
+| `Biometrics`、`Authentication*` 错误码 | `plugins/biometrics`：`Available`、`Authenticate(ctx, reason)` | **已迁移**：fork 新增 `plugins/biometrics`，API 照 #940（默认允许设备密码回退），暂时跑在根包 `mygo.Biometrics` 上；细分错误作为 fork 扩展（`ErrUnavailable`、`ErrNotEnrolled`、`ErrLockedOut`、`ErrPasscodeNotSet`、`ErrBusy`、`ErrInactive`、`ErrMissingPurpose`），同时包着系统的 `AuthenticationError`。根包的 `Biometrics` 换后端时删除 |
 | `RegisterPushNotifications`、`OnPushToken`、`OnNotification`、`OnPushRegistrationError` | `plugins/push`：`Register`、`OnToken`、`OnMessage`、`OnOpened` | 没有 `SetNotificationPresentationHandler`（前台展示策略） |
 | `Permissions.Query/Request` | `plugins/permissionflow`：`Check`、`Request` | — |
 | `Dialog.Photos` | `plugins/imagepicker`：`Pick` | — |
