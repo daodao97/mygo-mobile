@@ -62,6 +62,31 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 
 #940 没有对应、要改写为插件的：`InputAccessoryBar`/`InputAction`/`ModifierLatch`（**已改写**为 `plugins/keyboardbar` 的 `Bar`/`Action`/`ModifierLatch`；2026-11-10 决定删掉 iOS 原生的 `inputAccessoryView`：`Element.InputAccessory`、`TextInputState.Accessory`/`AccessoryID`、`SurfaceInputAction` 和 `native.m` 里的 `MyGoInputAccessory`，iOS 也画 Go 栏，靠 `keyboardTop` 把内容排在键盘之上；`InputModifiers` 留在 `ui`）、`Microphone`（**已改写**为 `plugins/microphone`）、`Speech`（含 `RegisterProvider`，**已改写**为 `plugins/speech`）、`Scanner.ScanCode`（**已改写**为 `plugins/scanner`）、`OpenInAppBrowser`（**已改写**为 `plugins/browser`）、`Network.Prepare`/`NetworkError`（**已改写**为 `plugins/network`），以及上面「缺口」列的部分。与移动端无关、不受影响的 B 类扩展：`Router.Reset/History/Transitioning`、`Network.PathStatus/OnPathChanged`、终端 `SelectOnDrag`、`ComboboxParts.Inline`、`Window.OnFirstFrame`、richtext `OnInput`/`OnPaste`/`OnCopy`、`Context.Blur`。
 
+### 当前状态与第二阶段清单（2026-11-10）
+
+**第一阶段（统一公开 API）已完成**，上表「缺口」列全部过完：能提前收敛的已改，其余逐项核实并写明换后端时的处理。Miya 固定在 `23e766f4`（Miya `0713575`），iPhone 16 上验证过键盘栏。
+
+**架构仍是 fork 的，和 #940 不同：**
+
+| | fork（现在） | #940 |
+|---|---|---|
+| 移动端后端 | 两个：`internal/ios`（cgo + Objective-C）、`internal/android`（cgo + JNI），宿主工程在仓库里（`android/`、`native/ios`），约 1.3 万行 | 一个：`internal/mobile`，Go 与 Swift/Kotlin 走生成的二进制协议（`internal/mobile/wire/gen/spec.go`），宿主内嵌在 CLI（`mygo build -platform ios` 或 `android`），约 1.8 万行 |
+| 插件调原生 | 插件是壳，调根包的 fork 模块（`mygo.Biometrics`、`Permissions`、`Dialog.Photos`、`App.RegisterPushNotifications`、`Microphone`、`Speech`、`Scanner`、`OpenInAppBrowser`、`Network.Prepare`）；fork **没有** `mygo.Native` | 插件经 `mygo.Native(id).Call`、`PluginView` 调自己的原生代码 |
+| 触摸引擎 | fork 的 `ui/touch*.go`（`TouchScroll`、`InputLongPress`、捏合 `Gestures`、`InteractiveBack`） | `ui/touch.go`、`touch_back.go`、`touch_text.go`（见上表手势一行） |
+| 安全区 | 只算系统栏，`ExtendIntoSafeArea` 控制 | 计入键盘，根元素自动内缩 |
+| 生命周期 | fork 的 `Lifecycle()`/`OnDidEnterBackground` 等保留为扩展，同时发 `Power` 的 suspend/resume | 只有 active/resign、`Power`、`OnSaveState` |
+
+**第二阶段：#940 合进上游 `main` 后换后端**（规则 1，以它为准）。按顺序：
+
+1. 合并上游后，删除 `internal/ios`、`internal/android`、`android/`、`native/ios` 及 `cmd/mygo` 中 fork 的 iOS 打包，改用 `internal/mobile` 和 CLI 内嵌宿主；`ui/touch.go`、`ui/touch_text.go`、`ui/gpu_android.go` 会直接冲突，取 #940 的。
+2. 插件改为 `mygo.Native`：`biometrics`、`push`、`imagepicker`、`permissionflow` 换成 #940 自带的实现（保留 fork 扩展：细分错误、`push.SetPresentation`、`NotificationOptions.Data`）；`microphone`、`speech`、`scanner`、`browser`、`network` 是 fork 独有，给它们写 Swift/Kotlin 原生端。然后删根包对应模块（`mygo.Biometrics`、`Permissions`、`Microphone`、`Speech`、`Scanner`、`OpenInAppBrowser`、`Network.Prepare`、`Dialog.Photos` 的手机实现、`App.RegisterPushNotifications`）。
+3. 触摸：删 `TouchScroll` 调用；`TouchSelection`/`InputLongPress` 的使用者（Miya `conversation_view`、`mobile_voice` 按住说话，fork 终端插件）重写或给 #940 加扩展；Miya 远程桌面的捏合缩放给 #940 加多指手势；`InteractiveBack` 改用 `Transition` 或给 #940 加开关。
+4. 安全区：Miya 删 `ExtendIntoSafeArea` 和自己按 `safeArea` 的内缩；`keyboardbar` 依赖「内容排在键盘之上」，在 #940 上复核（它的 `SafeArea` 计入键盘，根元素自动内缩）。
+5. 生命周期：`Lifecycle` 系列在 #940 上用 active/resign 与 `Power` 重建，或让 Miya、myclash 改用 `App.IsActive`/`Power.OnSuspend`。
+6. 验证：`go build ./...`、`go vet . ./ui`、`../Miya` 用 `GOWORK=off` 编译与测试、myclash 编译，iPhone 上装 Miya 实测（安装步骤见 Miya 的 `docs/install-and-upgrade.md`；`build-ios.sh -ios-device` 用硬件 UDID，`devicectl` 用 CoreDevice 标识符）。
+
+在那之前：同步上游照常进行（`git fetch upstream` 后 `git merge --no-ff upstream/main`），并用 worktree `~/.cache/mygo-pr/mobile-940` 跟踪 #940 的变化（`git fetch upstream pull/1581/head:refs/remotes/pr/1581`）。
+
 ## 差异分类
 
 ### A. 移动端（保留，不提交上游）
