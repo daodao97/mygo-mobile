@@ -11,12 +11,14 @@ package keyboardbar
 
 import "github.com/egoist/mygo/ui"
 
-// Action is a button of the bar. Label is its text and accessible name.
+// Action is a button of the bar. Label is its accessible name, and its text
+// unless Cap is set: Cap is what the key shows instead, as ⌫ or ⏎.
 // Items makes the button open a panel of further actions above the row
 // instead of sending its ID. LongPressID is sent instead of ID after a long
 // press. Selected and Locked show app-owned modifier state.
 type Action struct {
 	ID, Label   string
+	Cap         string
 	LongPressID string
 	Selected    bool
 	Locked      bool
@@ -38,7 +40,14 @@ func Bar(c *ui.Context, actions []Action, expanded *bool, handler func(string)) 
 		if b.Pressed() || a.Selected || len(a.Items) > 0 && *expanded {
 			b.Background(t.SurfacePressed)
 		}
-		b.Children(func() { ui.Text(c, a.Label).FontSize(13) })
+		b.Children(func() {
+			if a.Cap != "" {
+				// A symbol reads at the size of the keyboard's own.
+				ui.Text(c, a.Cap).FontSize(17)
+			} else {
+				ui.Text(c, a.Label).FontSize(13)
+			}
+		})
 		if a.LongPressID != "" {
 			id := a.LongPressID
 			b.HandleInput(func(ev ui.InputEvent) bool {
