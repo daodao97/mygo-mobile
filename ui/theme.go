@@ -9,6 +9,10 @@ import (
 // LightTheme or DarkTheme and set it with Context.SetTheme.
 type Theme struct {
 	Dark bool
+	// DisableAutoDimming keeps disabled elements at full opacity. Applications
+	// opting in must provide their own disabled colors; input, focus and
+	// accessibility still use the element's disabled state.
+	DisableAutoDimming bool
 	// Background fills the window. On iOS an opaque root background also
 	// fills the surrounding safe area, unless the window has an explicit color.
 	Background Color
@@ -91,7 +95,10 @@ type Theme struct {
 
 // followedTheme is a theme before and after following the desktop's
 // preferences.
-type followedTheme struct{ from, to Theme }
+type followedTheme struct {
+	_        [0]func() // used by pointer, so there is no value equality to link
+	from, to Theme
+}
 
 // Space returns n units of the theme's Spacing, to size elements of your
 // own in step with the widgets: ui.Column(c).Gap(t.Space(2)).

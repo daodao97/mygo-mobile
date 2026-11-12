@@ -1,17 +1,29 @@
 # Fork 与上游的差异
 
-本仓库是 `egoist/mygo`（上游，remote `upstream`）的 fork，`daodao97/mygo-mobile`（remote `origin`，2026-11-09 由 `daodao97/mygo` 更名为 MyGo Mobile，旧地址重定向）。Go 模块路径仍是 `github.com/egoist/mygo`，不随仓库更名，以便合并上游。本文件记录两者的差异、处理规则和进行中的工作，供维护 fork 的 agent 先读。数字为 2026-11-08 的快照，用文末的命令重新统计。
+本仓库是 `egoist/mygo`（上游，remote `upstream`）的 fork，`daodao97/mygo-mobile`（remote `origin`，2026-11-09 由 `daodao97/mygo` 更名为 MyGo Mobile，旧地址重定向）。Go 模块路径仍是 `github.com/egoist/mygo`，不随仓库更名，以便合并上游。本文件记录两者的差异、处理规则和进行中的工作，供维护 fork 的 agent 先读。数字为 2026-11-12 的快照，用文末的命令重新统计。
 
-## 快照（2026-11-08）
+## 快照（2026-11-12）
 
-- fork `main`：`a03239bb`（合并上游）；`upstream/main`：`80013ac3`；fork 落后上游 0 个提交。
-- fork 独有的非合并提交：118 个；`git diff upstream/main main` 约 66,000 行。
+- fork `main` 已合并 `upstream/main`：`0d644f4a`（含 0.9.0）；fork 落后上游 0 个提交。
+- fork 独有的非合并提交：158 个；与上游的增删差异约 71,000 行。
 - 2026-11-08 同步了上游 26 个提交（`1dfa5a1f..80013ac3`）。冲突只有两处：`go.mod` 取上游新增的 flac/aac 依赖，保留 fork 的 `Heyana/typesetting-go`；`ui/layoutcache_test.go` 的字段清单两边都保留（上游的 `popupSet`、fork 的触摸/输入字段）。上游新增的 `Window.SetInputRegion` 是可选接口 `platform.InputRegionWindow`，iOS/Android 不需要实现；`ListRow.Hovered`/`Pressed`/`PointerPosition`、终端 `Options.OnDrop` 在 fork 中没有对应实现，没有需要按规则 1 处理的重叠。
 - 2026-11-09 同步了上游 39 个提交（到 `6a730f12`）。冲突：`docs/architecture.md` 两边都保留（fork 的 iOS 段落、上游的 `ffi`）；`ui/runtime.go` 两边都保留（fork 的帧计时、上游的 `sweepVideos`）；`ui/layoutcache_test.go` 字段清单取并集；`internal/gpu/gl/load_linux.go` 只取上游新增的 `uploadElement`，`setShaderSource`/`shaderLog`/`programLog`/`infoLog` 在 fork 已移到 `load_common.go`（与 Android 共用）；终端 `urlPattern` 按规则 1 改用上游 #1481（URL 在第一个非 ASCII 字符处结束），fork 的写法删除；shader 二进制取上游后重新 `go generate`。上游 #1476 给 `platform.Clipboard.WriteData` 加了 `concealed` 参数，iOS/Android 后端已跟上签名，但还没有标记机密内容（iOS 的 `UIPasteboard` localOnly、Android 的 `EXTRA_IS_SENSITIVE`）。
   合并后对照上游这批新增（`RowClicked`、`WindowDoubleClicked`、`ui/video` 与 `Bitmap.UpdateYUV`、`Power.KeepRunning`、`App.ChosenLocale`、`ClipboardOptions.Concealed`、`ffi`/native modules、文本框的 `ReadOnly`/`Multiline` 无障碍状态、新的 landmark/tabpanel 角色）检查了 fork 新增代码，没有按规则 1 需要删除的重复实现。容易误判的两处：fork 的 `platform` 文本输入状态里的 `ReadOnly`/`Multiline` 是移动端键盘和原生选区的配置，上游 #1493 的是无障碍状态（`AccessReadOnly`/`AccessMultiline`），两者不同层；`ui/text_input_client.go` 的 `TextInputClient` 是上游的，fork 只在其上加了 UTF-16 适配。`desktopcontrol` 用 `purego.Dlopen` 加载的是系统框架，不属于 `ffi` 规定的应用自带库。iOS 还没有为新的 landmark/tabpanel 角色单独映射（落到默认处理）。
 - 2026-11-09 第二次同步上游 4 个提交（到 `6dfdff6a`），无冲突；其中 #1530 是 fork 的 PR，按规则 1 以上游为准。
 - 2026-11-10 同步上游 56 个提交（到 `a4b6734f`）。冲突 15 处：`app.go` 的监听器字段取并集（fork 的生命周期、上游的 `onQuitCanceled`），`DidBecomeActive` 同时保留上游的 `backgroundShow = false` 和 fork 的 `setLifecycle`；`login.go` 取上游的 `Relaunch(args ...string)`，保留 fork 的 iOS `IsSystemManaged` 判断；`updater.go` 的重启参数按规则 1 改用上游的 `work/relaunch`（删除 fork 把 `os.Args` 传给 helper 的写法），保留 fork 独有的 `keep`（`keepPreviousBundles`）；`internal/gpu/metal` 保留上游的 `MYGO_UNCAPPED`（`setDisplaySyncEnabled:`）和 fork 的 iOS 异步呈现；`ui/framestats.go`、`ui/runtime.go`、`ui/input.go` 两边都保留（fork 的 `FramePhases`、frame-why、触摸仲裁；上游的帧率统计、`askBuild`、悬停只重绘外观）；`ui/context.go`/`ui/paint.go` 保留 fork 的 `uint64` flags 和 router 字段，加上游的 `hoverBuilt`/`hoverLook` 和 `ScrollbarStyle`；终端只加上游的 `barStyle`。richtext 按规则 1 删除 fork 的 `EditorOptions.ContextMenu`，改用上游的 `Menu`（Miya `conversation_view.go` 已改）；fork 的 `OnInput`（所有输入）和上游的 `OnKey`（只有按键）并存，`OnInput` 先问。上游给 `platform.Shell` 加的 `PreviewItem`（Quick Look，#1561）在 Android 返回 unsupported。
 - 2026-11-10 第二次同步上游 13 个提交（到 `e98410d0`）。冲突 3 处：`README.md` 取 fork 的（上游只在 fork README 没有的功能列表里加了 RPM）；`cmd/mygo/config_test.go`、`go.sum` 取并集（fork 的 iOS 配置类型与 `Heyana/typesetting-go`，上游的 `LinuxDepends` 与 rpm 依赖）。上游 #1634 给 `platform.Shell` 加了 `DefaultApp`：Android 补成 unsupported，iOS 由内层后端继承。对照这批新增检查了 fork 代码：`examples/ios-native` 的 `revealEditingField` 处理点按聚焦和键盘/旋转导致的视口变化，正是上游 #1629/#1635 的聚焦滚动明确不管的两种情况，不算重复，保留；`Theme.WithAccent`/`WithPreferences`、`TitleBar.Bottom` 在 fork 中没有对应实现（fork 的 `SafeArea` 是另一个问题）。iOS 还没有把 `TitleBar.Bottom` 用于刘海/灵动岛区域。
+- 2026-11-12 同步上游 52 个提交（`e98410d0..0d644f4a`）。冲突 4 个文件：`README.md` 保留 fork 的应用列表（上游增加的是赞助链接）；`ui/theme.go` 保留上游的 `DisableAutoDimming` 和 fork 的 iOS 背景说明；终端 `paint.go`、`view.go` 采用上游 #1687 的行缓存复用，保留 fork 的固定网格、光标跟随和自适应颜色缓存，删掉不再使用的 `searchMatches` 字段。自动合并之外，将新增的 `hiddenScrollbars`/`barFlags` 适配为 fork 的 `uint64` flags，inspector 改读新的滚动条轴状态。用 fork 的生成器重建 `ui/api_gen.go`，迁移表检查通过。
+  对照新功能检查了 fork 扩展：`FocusOptions.PreventScroll`、`Element.OnUnmount`、`ListState.Choose`、逐轴滚动条、富文本的 `ScrollBy`/`ScrollToParagraph`/`VisibleParagraphs`/`CaretRect`/`NoScrollbar`、代码编辑器的 `EditRemote`/文本替换显示、Markdown `CodeLink` 均没有 fork 的同功能实现。富文本 `OnInput`/`OnPaste`/`OnCopy` 仍是 fork 扩展。新增的平台契约只有 `WindowHandler` 的客户端证书回调，由核心实现，不要求 iOS/Android 新增后端方法；移动端 webview 尚未接入客户端证书选择。#940 尚未合入；#1525、#1571 经查询仍是未合并的草稿 PR。
+  验证：macOS/Linux/Windows 的 `CGO_ENABLED=0 go build ./...` 和 `go vet ./...`、生产标签与 js/wasm vet、Go 全仓库测试、Miya 本地依赖编译、iOS 后端 vet、Android `.so` 构建与 16KB 对齐均通过。另修正 fork 原有的跨平台 E2E 编译问题：将公共测试中的 macOS `waitOnScreen` 移入 Darwin 的 `drag` 钩子，真实 GUI 的 `TestContentWindowTextSelection` 回归通过。本机 Bun 1.2.20 的 Response.clone 测试失败，改用项目 `.bun-version` 锁定的 1.4.4 后，构建、268 项测试和类型检查全部通过，生成的 bridge/keys 文件没有差异。
+  发布体积（arm64，`-trimpath -tags mygo_noinspector -ldflags '-s -w -X github.com/egoist/mygo.production=1'`，两边加 `-buildvcs=false` 排除独立基线源码的 VCS 元数据差异）：
+
+  | 平台 | counter-native 同步前 → 后（字节） | hello 同步前 → 后（字节） |
+  |---|---:|---:|
+  | macOS | 9,954,370 → 9,988,258（+33,888） | 9,783,890 → 9,800,978（+17,088） |
+  | Linux | 9,502,983 → 9,502,983（不变） | 9,437,447 → 9,437,447（不变） |
+  | Windows | 10,055,168 → 10,066,944（+11,776） | 9,666,560 → 9,679,872（+13,312） |
+
+  增长来自本批上游通用改动，按规则 1 保留上游实现。macOS hello 的 `-dumpdep` 和符号比较确认，新增客户端证书路径由 `window.authChallenge → clientCertificate → keychainIdentities → platform.CertificateIssuer` 链入；语言匹配缓存由 `missingTranslations → i18n.Match → i18n.match` 链入。counter-native 还包含新的 UI 布局、滚动条和生命周期逻辑。未引入 fork 的重依赖或新的共享路径反射查找。
 - 约 2/3 是 iOS/Android，其余是对上游的扩展和待提交回上游的修复。共享代码中已没有已知的重复实现（见「已清理的重复实现」）。
 
 ## 规则

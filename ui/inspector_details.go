@@ -236,7 +236,11 @@ func ownStyles(rt *engine, e *node) []inspDecl {
 	if v, ok := edgesCSS(e.barInset); ok {
 		add("scrollbar-insets", v)
 	}
-	if hide, _ := e.scrollbars(); hide {
+	source := e
+	if e.barsFrom != nil {
+		source = e.barsFrom
+	}
+	if source.hiddenScrollbars&hideAllScrollbars != 0 || source.hiddenScrollbars&(flagScrollX|flagScrollY) == flagScrollX|flagScrollY {
 		add("scrollbar-width", "none")
 	}
 	if v, ok := edgesCSS(e.border); ok {

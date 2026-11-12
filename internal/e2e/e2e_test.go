@@ -142,6 +142,10 @@ func TestMain(m *testing.M) {
 		automationApp()
 		return
 	}
+	if os.Getenv("MYGO_E2E_PROGRAM_NAME") == "1" {
+		programName()
+		return
+	}
 	mygo.Bind(Greeter{}, probe, streams, Bench{})
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -3287,7 +3291,6 @@ func TestContentWindowTextSelection(t *testing.T) {
 	clipboard := mygo.Clipboard.ReadText()
 	defer mygo.Clipboard.WriteText(clipboard)
 	w.Focus()
-	waitOnScreen(w)
 	eventually(t, "the selection window focused", w.IsFocused)
 	eventually(t, "a frame", func() bool { return frames.Load() > 0 })
 	var copied string

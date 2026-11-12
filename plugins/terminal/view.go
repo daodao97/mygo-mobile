@@ -189,16 +189,29 @@ type view struct {
 	size                             [2]float32
 
 	colors        vt.Colors
+	contrast      float32 // Options.MinimumContrast, as of the last paint
 	cursor        vt.Cursor
 	scrollbar     vt.Scrollbar
-	searchMatches []vt.Selection
 	lines         []rowCache
 	shaped        lru
 	contrastCache map[contrastPair]ui.Color
-	contrast      float32
-	images        []shownImage
-	bitmaps       map[uint32]*cachedImage
-	// virtual are virtual image placements shown through placeholder cells.
+	// spare holds the rows of the frame before, whose slices the next
+	// frame's rows take (updateRows); taken marks the rows of the last
+	// frame the next has taken, and key, keyStyles and graphemes hold a
+	// row's key as it is written (rowKey).
+	spare     []rowCache
+	taken     []bool
+	key       []byte
+	keyStyles []uint16
+	graphemes []rune
+	// shapeKey holds the key of text to shape as it is written (shape).
+	shapeKey []byte
+	// images are the placements of images that show, and bitmaps their
+	// images' (readImages).
+	images  []shownImage
+	bitmaps map[uint32]*cachedImage
+	// virtual are the virtual placements, by their images' ids, which
+	// placeholder cells show.
 	virtual map[uint32][]virtualImage
 
 	keys    *vt.KeyEncoder

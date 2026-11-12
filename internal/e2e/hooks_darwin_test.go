@@ -96,6 +96,7 @@ func pinch(w *mygo.Window, x, y, scale float64) (got float64, ok bool) {
 }
 
 func drag(w *mygo.Window, points [][2]float64) bool {
+	waitOnScreen(w)
 	mygo.RunOnMain(func() { darwin.TestDrag(w.NativeHandle(), points) })
 	return true
 }

@@ -320,6 +320,12 @@ type layoutStyle struct {
 	// baselines is set on the row of a field in a form, which lines up
 	// the first lines of its label and control.
 	baselines bool
+	// absoluteChild is set on a container with a child out of its flow
+	// (Absolute, Attach), which layoutAbsolute places: without one it has
+	// no walk to make. It is set as the child is added or taken out of the
+	// flow, and left set: taking a child out of the flow again only costs
+	// the walk.
+	absoluteChild bool
 
 	maxLines   int
 	single     bool
@@ -584,18 +590,18 @@ type node struct {
 	// listRow is set on the elements holding its rows, rowIndex their row.
 	// rowsOf is the list whose rows the element holds for assistive
 	// technology, and takes the keys for: the list, or its Table.
-	// popover is the anchor of the panel of a popover. hideScrollbars and
-	// keepScrollbars are the element's Scrollbars and KeepScrollbars, and
-	// barsFrom the element whose they are instead, as a table's for the
-	// list of its rows.
+	// popover is the anchor of the panel of a popover. barsFrom supplies
+	// the scroll bar settings, as a table does for the list of its rows.
 	popover        *node
 	list           *listFrame
 	listRow        bool
-	hideScrollbars bool
 	keepScrollbars bool
-	barsFrom       *node
-	rowIndex       int
-	rowsOf         *listFrame
+	// hiddenScrollbars holds the axes hidden by ScrollbarAxes and the
+	// independent Scrollbars(false) override.
+	hiddenScrollbars uint64
+	barsFrom         *node
+	rowIndex         int
+	rowsOf           *listFrame
 	// snap is how the element, a scroll container, snaps (ScrollSnap), and
 	// snapAlign how the element lines up with the container around it
 	// that does (SnapAlign): Start, Center or End plus one, horizontally
@@ -1045,39 +1051,45 @@ func (e *node) ScrollbarStyle(s ScrollbarStyle) *node { e.barStyle = &s; return 
 // It applies to Scroll, ScrollHorizontal, ScrollBoth, List and Table, not the
 // internal indicators of custom controls such as a code editor (whose State
 // has NoScrollbars), and is not inherited.
-func (e *node) Scrollbars(visible bool) *node { e.hideScrollbars = !visible; return e }
+func (e *node) Scrollbars(visible bool) *node {
+	if visible {
+		e.hiddenScrollbars &^= hideAllScrollbars
+	} else {
+		e.hiddenScrollbars |= hideAllScrollbars
+	}
+	return e
+}
+
+// This bit is separate from flagScrollX and flagScrollY in hiddenScrollbars.
+const hideAllScrollbars = 1
+
+// ScrollbarAxes controls the horizontal and vertical indicators and their
+// pointer hit targets independently. Both are enabled by default, showing
+// while the container overflows and is hovered, or as KeepScrollbars says.
+// Hiding the axis being dragged ends that drag. Wheel, TrackScroll, keyboard
+// focus and accessibility still scroll both axes.
+// Scrollbars(false) hides both regardless of call order; Scrollbars(true)
+// preserves the axis settings. It applies where Scrollbars does and is not
+// inherited. Omitting it in the next build enables both axes again.
+func (e *node) ScrollbarAxes(horizontal, vertical bool) *node {
+	e.hiddenScrollbars &= hideAllScrollbars
+	if !horizontal {
+		e.hiddenScrollbars |= flagScrollX
+	}
+	if !vertical {
+		e.hiddenScrollbars |= flagScrollY
+	}
+	return e
+}
 
 // KeepScrollbars keeps this scroll container's scroll bars showing while its
 // content overflows it, with the pointer over it or not, rather than only
 // while it is hovered or a bar is dragged: a view whose place in its content
 // matters, as a long diff filling a window, shows how far down it is. The
-// bars look and take presses as they do on hover; Scrollbars(false) hides
-// them still. It applies where Scrollbars does (a code editor's State has
-// KeepScrollbars), and is not inherited.
+// bars look and take presses as they do on hover; Scrollbars(false) and
+// ScrollbarAxes still hide them. It applies where Scrollbars does (a code
+// editor's State has KeepScrollbars), and is not inherited.
 func (e *node) KeepScrollbars(keep bool) *node { e.keepScrollbars = keep; return e }
-
-// scrollbars returns whether the element hides its scroll bars
-// (Scrollbars(false)) and whether it keeps them showing (KeepScrollbars),
-// as it says or the element it takes them from does (barsFrom).
-func (e *node) scrollbars() (hide, keep bool) {
-	if e.barsFrom != nil {
-		e = e.barsFrom
-	}
-	return e.hideScrollbars, e.keepScrollbars
-}
-
-// scrollbarStyle returns how the element's scroll bars look, as it says or
-// the element it takes them from does (barsFrom), as a table's rows take
-// the table's.
-func (e *node) scrollbarStyle() ScrollbarStyle {
-	if e.barsFrom != nil {
-		e = e.barsFrom
-	}
-	if e.barStyle != nil {
-		return *e.barStyle
-	}
-	return ScrollbarStyle{}
-}
 
 // Width sets the width in DIPs.
 func (e *node) Width(v float32) *node { e.width = px(v); return e }
@@ -1167,7 +1179,21 @@ func (e *node) Center() *node { e.justify, e.align = Center, Center; return e }
 // its siblings. As in CSS, that box is inside the parent's border but holds
 // its padding: Top(0) puts the element just below the border, whatever the
 // padding.
-func (e *node) Absolute() *node { e.flags |= flagAbsolute; return e }
+func (e *node) Absolute() *node { e.markAbsolute(); return e }
+
+// markAbsolute takes the element out of its parent's layout and tells the
+// parent, which then walks its children for the ones to place.
+func (e *node) markAbsolute() {
+	e.flags |= flagAbsolute
+	if p := e.parent; p != nil && !p.absoluteChild {
+		// The parent's own: it walks its children for the ones out of the
+		// flow, and it does so from now on. A toolbar collapsing its
+		// controls and a list pinning a row take a child out of the flow
+		// after the build.
+		journalKeep(e.c.rt, &p.absoluteChild)
+		p.absoluteChild = true
+	}
+}
 
 // Top, Right, Bottom and Left place an Absolute element. On an element in
 // its parent's layout, they move it from where the layout put it, as CSS's
@@ -1278,7 +1304,7 @@ func (a Anchor) downFlipped() Anchor {
 // Right, Bottom and Left then move it from there; the element keeps its
 // own size.
 func (e *node) Attach(at, self Anchor) *node {
-	e.flags |= flagAbsolute
+	e.markAbsolute()
 	e.attach = attachment(1 + min(at, AnchorBottomEnd)*15 + min(self, AnchorBottomEnd))
 	return e
 }
@@ -1302,7 +1328,7 @@ func (e *node) AttachTo(target *node, at, self Anchor) *node {
 	if target == nil {
 		return e
 	}
-	e.flags |= flagAbsolute
+	e.markAbsolute()
 	e.attach = attachment(1 + min(at, AnchorBottomEnd)*15 + min(self, AnchorBottomEnd))
 	e.popover = target
 	if e.dir&dirSet == 0 {
@@ -1373,7 +1399,9 @@ func (e *node) KeepFocus() *node { e.flags |= flagKeepFocus; return e }
 // as it builds the element's node, only while assistive technology reads
 // the window: what costs too much to give every frame, as the text of a
 // large document. The node is a type internal to this module, so only
-// its packages describe elements so, as package ui/editor does.
+// its packages describe elements so, as package ui/editor does. The
+// elements inside a text field described so show to assistive technology
+// too, as those of other text fields do not.
 func (e *node) Access(fn func(n *platform.AccessNode)) *node { e.accFill = fn; return e }
 
 // AspectRatio makes the height the width divided by r.
@@ -2184,6 +2212,12 @@ func (e *node) add(child *node) {
 	e.forgetIntrinsic()
 	child.parent = e
 	child.depth = e.depth + 1
+	if child.flags&flagAbsolute != 0 && !e.absoluteChild {
+		// Taken out of the flow before it was added, as an overlay's is,
+		// which the frame adds to the root as it lays out.
+		journalKeep(e.c.rt, &e.absoluteChild)
+		e.absoluteChild = true
+	}
 	if child.zIndex != 0 {
 		journalKeep(e.c.rt, &e.zOrder)
 		e.zOrder = true // set before it was added, as on a copy leaving (ghostOf)

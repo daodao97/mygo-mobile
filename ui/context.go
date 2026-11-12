@@ -727,6 +727,9 @@ type state struct {
 	// invisible tells that the element showed nothing in the last frame,
 	// wherever it was: invisible, inert or hidden (InViewMargin).
 	invisible bool
+	// view is what InView and its kin read, once an element asks for it
+	// (watchView), for the frame that rebuilds the view when it changes.
+	view *viewWatch
 	// rtl tells that the element was laid out right to left: a scroll
 	// container's horizontal offset counts from the right, and its
 	// vertical scroll bar is on the left.
@@ -875,7 +878,9 @@ type state struct {
 	// barsShown reports whether the last frame painted the element's
 	// scroll bars: they show only while it is hovered or a bar is
 	// dragged, unless it keeps them (KeepScrollbars).
-	barsShown, hideScrollbars bool
+	barsShown bool
+	// barFlags contains the enabled scroll axes and, if any, the keep bit.
+	barFlags uint64
 	// track is the ScrollState of the last frame's element, which events
 	// that scroll it update (scrollTo).
 	track *ScrollState

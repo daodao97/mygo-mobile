@@ -605,6 +605,12 @@ by `mygo build` with `mygo_noinspector`) leave out its downloader and
 - The main thread is the one that called `gtk_init_check`; `IsMainThread`
   compares `gettid`. `Step` is `g_main_context_iteration(NULL, TRUE)` and
   `Wake` is `g_main_context_wakeup`.
+- `Init` names the program after its executable (`g_set_prgname`) before
+  `gtk_init_check`, which would name it after `argv[0]`: GTK names the
+  class of the windows and the app id after the program, as the desktop
+  entry does (`StartupWMClass`), and WebKitGTK the directories of the
+  pages' data. Started through a link of another name, as `linux.command`
+  puts in `/usr/bin`, the app is then the same program.
 - `Bounds` are those of the frame a reparenting X11 window manager puts
   around the window (`gdk_window_get_frame_extents`): GTK positions the
   frame (NORTH_WEST gravity) and sizes the window inside it, without the
@@ -2238,7 +2244,16 @@ as in Tauri:
   allows them; macOS checks certificates itself
   (`SecTrustEvaluateAsyncWithError`) only while
   `HandlesCertificateErrors` is true, and Linux and Windows extract the
-  certificate only then. Client certificates are left to the platform.
+  certificate only then. Client certificates go to
+  `WindowHandler.ClientCertificateRequested`, which
+  `SetClientCertificateHandler` answers with one of the offered
+  certificates or an empty response to refuse; without a handler the
+  answer is `Default`, the web view's own handling. Linux lists no
+  certificates to offer (WebKitGTK has none), so a handler there can
+  only refuse, and a refusal ends the load as a cancellation, which
+  `OnDidFailLoad` does not report. macOS lists the keychain's identities
+  only while `HandlesClientCertificates` is true, for the keychain asks
+  the user for them.
 - Active windows (`active.go`): a window is drawn as active, the one the
   user's input goes to, while it or a flyout of it (through flyouts'
   parents) has the keyboard (`windows.focused`), always while
@@ -3260,14 +3275,18 @@ either.
   or an ancestor's, leaves with an `Exit` wait in `engine.exits` until
   the transition's record is gone or no longer holds that copy (the
   exit ended, or the element came back), and the engine's `close` closes
-  every state's as the window closes. `Context` is stable for the window; `Element` values expire between build
+  every state's as the window closes. An element's `OnUnmount` keeps its
+  function in such a `Local`, under a key of its own (`unmount`,
+  `ui/local_close.go`), whose `Close` runs the function given last.
+  `Context` is stable for the window; `Element` values expire between build
   passes and validate their owner, slot and generation before accessing storage. `ListState` resolves
   its focus owner only for the current context, frame and pass, exposing
   focus and shortcuts without retaining an element in app state. Scroll
   offsets move in the layout too
   (`ui/scroll.go`): elements that asked to `ScrollIntoView`, and the focus
   as the keyboard or the app moved it (`node.focus`; a click does not,
-  nor the app while a pointer button is held),
+  nor the app while a pointer button is held or with
+  `FocusOptions.PreventScroll`),
   come into view before the boxes are placed, lined up as its options say
   (or glide there as a wheel's notches do, by what they went each frame,
   `glideScroll`), and placing keeps each offset within its content; a
@@ -3409,8 +3428,9 @@ either.
   window hidden, minimized or covered by other windows, whose display link
   still ticks while it is covered, at the display's rate for half a
   minute, then at about 40 Hz, but not while it is hidden or minimized,
-  where `RequestFrame` draws the frame from the backend's queue
-  (`drawSoon`) instead; a minimized window on Linux, as GDK's `window-state-event` tells
+  where a timer draws the frames `RequestFrame` asks for instead, a
+  refresh after the last, and the backend's queue (`drawSoon`) the one
+  after a pause; a minimized window on Linux, as GDK's `window-state-event` tells
   on X11, and on Windows, as `WM_SIZE` does, where no `WM_PAINT` comes
   and `RequestFrame` draws the frame from the queue as well), what moves asks for no frame, and a frame asked for by a change of
   the state waits (`holdFrame`; both `held`), as browsers draw nothing for
@@ -4241,10 +4261,22 @@ either.
     highlighter and the diff follow a buffer by the versions they last
     saw (`sync`): selections, folds, diagnostics and caches move through
     the changes since, with a bias at insertions, so that one buffer is
-    shown by several editors and both sides of a diff. Undo keeps the
-    texts before and after each step, grouped while typing of one kind
-    by one editor goes on within 300 ms, and each step the selections of
-    the editor that made it.
+    shown by several editors and both sides of a diff. A step of undo
+    keeps the edits that take it back, a list for each version it made,
+    grouped while typing of one kind by one editor goes on within 300 ms,
+    and the selections of the editor that made it. Taking a step back
+    applies its lists from the last, logging a version for each, whose
+    text is its changes' as tree-sitter needs, and keeps the edits taking
+    each back as the step of redo. `EditRemote` makes a version outside
+    the history and moves both stacks past it, from the top
+    (`rebase`): the edit's ranges (`span`) and a step's lists are of one
+    text, so each moves past the other (`rebaseEdits`), and the ranges go
+    on down. A step that overlaps them leaves the history, the text
+    staying as it is, so the steps under it move past that step and the
+    ranges together (`composeSpans`). The cost is a few integers for
+    each edit of the history, whatever the size of the text; a step's
+    replaced text is a string, so undoing `Set` builds the text again
+    where it used to swap versions.
   - *Display* (`display.go`, `view.go`). Every line is a row, several
     when it wraps, none when folded or collapsed by a diff; blocks are
     rows between lines (a diff's deleted lines, spacers, separators,
@@ -4264,6 +4296,17 @@ either.
     may count a row too few until they show. Closing CJK punctuation
     starts no row, nor opening punctuation ends one (`canBreak`). A new
     generation of the text system measures and shapes everything anew.
+  - *Replacements* (`replace.go`). A range shown as something else is a
+    segment of a line's displayed text, as a tab or an inlay is: its Text,
+    nothing, or for an element an object replacement character the text
+    system gives the element's width (`faceRun.obj`, `Span.ObjectWidth`),
+    so that shaping, carets, selections and wraps need no case of their
+    own, lines not laid out yet counting it too. Their elements are built
+    over the text at the places the lines laid out give, a frame painting
+    them elsewhere building again (`replacementsMoved`). Lines covered
+    through their newline join the hidden spans. Replacements move as
+    selections do, and a change lays out again only the lines of those
+    that differ, so that an app can set them every frame.
   - *Highlighting* (`syntax.go`). A `Highlighter` follows the buffer's
     edits and gives tokens per line; the default tokenizes lines from the
     state the line above ended in (`lexer.go`, `lexers.go`), keeping the
@@ -4391,7 +4434,9 @@ either.
     It lays out a paragraph at a time with `ShapeRichTextWith`, keeping
     each layout for the runs, style and composition it was made of, and
     places them by heights in two Fenwick trees from an anchor paragraph,
-    as a text area does. Every edit goes through the document, as a step
+    as a text area does: the first in view, or the caret's while the editor
+    is focused and scrolled, which keeps the line being typed still as
+    what is above it grows. Every edit goes through the document, as a step
     of undo or part of the action's; typing joins typing's step.
     Attachments are inline objects of the text system; a first line's
     indent is the layout's (`TextShape.Indent`), on the side the
@@ -5537,7 +5582,9 @@ either.
     that took back the drawables given back when idle: drawn in AppKit's
     display of the view, presented with the transaction too, it did not
     show, and the window kept the last frame stretched to its new size
-    (#1044). The main thread never
+    (#1044). So does one asked for after a pause, which would otherwise
+    draw from the backend's queue (`drawSoon`) in a pass of its own, and
+    not show either. The main thread never
     waits for the display: after each frame presented as soon as drawn, a
     goroutine on a thread of its own (`present.go`) takes the next frame's
     drawable, which `nextDrawable` holds back while the display holds the
@@ -5571,7 +5618,11 @@ either.
     Waiting for a drawable remains separate from waiting for an instance
     buffer, so offscreen encode timings do not establish presentation latency.
     Opaque fill cores use an unblended pipeline in BGRA8; float16 keeps
-    blending to preserve its interpolation rounding. Fragment functions are
+    blending to preserve its interpolation rounding, and GPUs outside the
+    Mac2 family keep to the blended one: one such GPU, an Intel Haswell
+    whose driver OpenCore Legacy Patcher backported, hung in the unblended
+    pipeline (#1566), and blending them costs only that GPU's tile-based
+    win of writing without blending. Fragment functions are
     specialized by batch class and continuous corners, with general shaders
     as an identical fallback. Runs of small batches of different classes
     (each covering at most 128×128 pixels, as a box's shadow then its
@@ -5581,7 +5632,12 @@ either.
     cached per device, outside the frame path. Renderer release stops and
     joins that worker before releasing its shader library. Float16 shadows
     stay general, and fills with fractional opacity avoid the plain class,
-    because specialization otherwise changes rounding. Function constant
+    because specialization otherwise changes rounding. GPUs outside
+    Metal's Mac2 family (`supportsFamily:`), as Intel's Haswell, draw every
+    batch with the general pipeline, compiling and warming none, and keep
+    their batches together: one such GPU, on a driver backported by
+    OpenCore Legacy Patcher, hung while specialized pipelines compiled
+    (#1566). Function constant
     indices 0 through 7 belong to the renderer; effects start their own at 8.
     Two seconds after the last frame, as the
     driver frees its own memory of frames, a timer shrinks the drawables,
@@ -6820,6 +6876,7 @@ which npm allows only for packages that exist: the first release uses an
 | sessions (`PageOptions.Session`) | a `WKWebsiteDataStore` set on each web view's configuration: `dataStoreForIdentifier:` of a UUID made of the name (macOS 14+; before, `nonPersistentDataStore` kept until the app quits), `nonPersistentDataStore` for an ephemeral one, released when its last page closes; `window.open` hands the opener's configuration over | a `WebKitWebContext` per session, made with `webkit_web_context_new_with_website_data_manager` of a manager with base data and cache directories in `Sessions/<UUID>` of the user data and cache directories, or `webkit_website_data_manager_new_ephemeral`; web views made with `g_object_new` and `web-context`, which keeps a reference to it; custom schemes, languages and downloads set up on each context; unreferenced when an ephemeral one's last page closes | a WebView2 profile per session (`ICoreWebView2Environment10`'s controller options: `put_ProfileName` `mygo-<UUID>`, or `mygo-private-<n>` with `put_IsInPrivateModeEnabled` for an ephemeral one, a new name for each of its stores); windows, web views in native UI and the cookie calls' hidden web views made with those options |
 | HTTP sign-in (`SetAuthHandler`) | `webView:didReceiveAuthenticationChallenge:completionHandler:`, `NSURLCredential` for the session; none: no prompt, the 401 page; empty answer: `RejectProtectionSpace` | `WebKitWebView::authenticate`, `webkit_credential_new` for the session; none: WebKitGTK's dialog; empty answer: authenticates without credentials | `ICoreWebView2_10`'s `BasicAuthenticationRequested`, scheme and realm parsed from its challenge, no proxy flag; none: WebView2's dialog; empty answer: `Cancel` |
 | certificate errors (`SetCertificateErrorHandler`) | the server trust challenge of every connection, checked with `SecTrustEvaluateAsyncWithError` while a handler is set, allowed with `credentialForTrust:` for that connection | `load-failed-with-tls-errors`, the main frame only; allowed with `webkit_web_context_allow_tls_certificate_for_host` (app-wide) and loaded again | `ICoreWebView2_14`'s `ServerCertificateErrorDetected`, every request, after `NavigationCompleted` failed; allowed with `ALWAYS_ALLOW` (app-wide) |
+| client certificates (`SetClientCertificateHandler`) | the client certificate challenge, identities of the keychain (`SecItemCopyMatching`, `kSecClassIdentity`), which the keychain asks the user for, answered with `credentialWithIdentity:certificates:persistence:`; none: WebKit never asks; empty answer: reject | scheme `CLIENT_CERTIFICATE_REQUESTED` on `WebKitWebView::authenticate`; WebKitGTK lists no certificates, so none are offered and a handler can only cancel (`webkit_authentication_request_cancel`), which ends the load as a cancellation `OnDidFailLoad` does not report; none: WebKitGTK's certificate chooser | `ICoreWebView2_5`'s `ClientCertificateRequested`, the mutually trusted certificates; none: WebView2's dialog; empty answer: the challenge is canceled, as a user's dismissal of the dialog is; a runtime without `_5` never asks |
 | a page's context menu (`OnContextMenu`) | `-[NSView willOpenMenu:withEvent:]` of `MyGoWebView`, on a menu with an item of `forwardContextMenuAction:` or a `WKMenuItemIdentifier*`: items named by their identifier, else WebKit's tag or AppKit's action, emptied and filled again in place; the target from the bridge alone, matched by the event's point; the app's items are `buildItem`'s, sent to `mygoContextItemClicked:` and the menu's window | `WebKitWebView::context-menu`: items named by their stock action, labels from their `GtkAction`, state from their `GAction`; the hit test tells all but the selection; renamed stock items are new ones of the same action; the app's items wrap a `GSimpleAction` (`webkit_context_menu_item_new_from_gaction`) | `ICoreWebView2_11`'s `ContextMenuRequested`, with the whole target (`Complete`); a changed menu is `Handled`, built by `buildMenu` and tracked after a deferral, and a WebView2 item chosen is its `SelectedCommandId`; a runtime without `_11` never asks |
 | permissions | `WKUIDelegate` media capture (camera, microphone) | `permission-request` (camera, microphone, geolocation, notifications) | `PermissionRequested` (the same four; WebView2 asks about others) |
 | user agent | `customUserAgent`; `UserAgentSuffix` is the configuration's `applicationNameForUserAgent`, which a `window.open()` window does not inherit | `WebKitSettings:user-agent`; `UserAgentSuffix` appends application details, split at the first "/" | `ICoreWebView2Settings2`'s user agent, and a suffix appended to the settings' own user agent; a runtime without `Settings2` ignores both |

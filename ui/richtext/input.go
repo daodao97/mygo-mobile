@@ -54,10 +54,8 @@ func (v *view) input(ev ui.InputEvent) bool {
 		v.reveal = true
 		return true
 	case ui.InputScroll:
-		before := v.scroll
-		v.setScroll(max(0, min(v.scroll+float64(ev.DY), v.hs.top(len(v.paras))-float64(v.viewH))))
 		// At an end, the wheel goes on to the containers around.
-		return v.scroll != before
+		return v.scrollTo(v.scroll + float64(ev.DY))
 	}
 	return false
 }
@@ -716,6 +714,9 @@ func (v *view) taskBox(x float32, y float64) (int, bool) {
 
 // overScrollbar reports whether x of the element is on the scroll bar.
 func (v *view) overScrollbar(x float32) bool {
+	if v.opts.NoScrollbar {
+		return false
+	}
 	width := v.barStyle.TrackWidth
 	if width <= 0 {
 		width = scrollbarWidth

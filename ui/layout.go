@@ -178,11 +178,20 @@ func place(e *node, x, y float32) {
 	}
 }
 
+// insetSet reports whether any of the element's insets is set: they are
+// what place it, and their unit tells, as the inspector's does.
+func (e *node) insetSet() bool {
+	return e.inset[0].u != unitAuto || e.inset[1].u != unitAuto || e.inset[2].u != unitAuto || e.inset[3].u != unitAuto
+}
+
 // relative returns how far the insets of an element in flow move it from
 // where the layout put it, against a content box cw×ch. Where both Left
 // and Right are set, Left wins, or Right in an element laid out right to
 // left, as in CSS.
 func (e *node) relative(cw, ch float32) (dx, dy float32) {
+	if !e.insetSet() {
+		return 0, 0 // nothing placed it: it is where the layout put it
+	}
 	if e.sticky && e.flags&flagAbsolute == 0 {
 		return 0, 0 // they hold it in its scroll container instead
 	}
@@ -636,6 +645,8 @@ func computeBox(e *node, w, h float32) {
 	layoutAbsolute(e)
 }
 
+// A flexItem fills 64 bytes, a cache line: larger, the items of deep trees
+// take longer to lay out than the walks over their elements they save.
 type flexItem struct {
 	e                    *node
 	base, hyp            float32
@@ -644,12 +655,17 @@ type flexItem struct {
 	main, cross          float32
 	violation            float32 // how far clamping moved main, resolving
 	marginMain, marginCr float32
+	// crossKnown is set where the first pass found the cross size, which
+	// for the others depends on their main size, and stretch on those the
+	// line's cross size is given to, so that the passes after it go over
+	// the items and not over the elements again.
+	crossKnown, stretch bool
 	// baseline is how far from the start of its margin box across the
 	// line the baseline of an item aligned by its baseline (byBaseline)
 	// is, and laidOut is set on those of a row, laid out to find theirs.
 	baseline                float32
 	frozen, byBase, laidOut bool
-	line                    int
+	line                    int32
 }
 
 type flexLine struct {
@@ -711,26 +727,50 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 			continue
 		}
 		it := flexItem{e: c}
+		stretch := stretches(c, align, row)
+		var own float32 // the size along the main axis the element gives itself
+		var owns bool
 		if row {
 			it.marginMain, it.marginCr = c.marginX(), c.marginY()
+			own, owns = c.width.resolve(base(cw))
+			// Across the row it is as high as it says, or as the row where
+			// it stretches to its one line, which measuring it first would
+			// not change; the others are as high as their width, known
+			// once the line's flexible lengths are, makes them.
+			v, ok := c.height.resolve(base(ch))
+			it.stretch = stretch && !ok && c.aspect == 0
+			if ok {
+				it.cross, it.crossKnown = c.clampH(v, ch), true
+			} else if it.stretch && finite(ch) && !e.wrap {
+				it.cross, it.crossKnown = c.clampH(ch-it.marginCr, ch), true
+			}
 		} else {
 			it.marginMain, it.marginCr = c.marginY(), c.marginX()
+			own, owns = c.height.resolve(base(ch))
+			// Across the column it is as wide as it says, as the column
+			// where it stretches to it, or as its content. In a column
+			// that wraps it fits its content, and stretches only to its
+			// line, as wide as the widest there.
+			v, ok := c.width.resolve(base(cw))
+			it.stretch = stretch && !ok
+			if ok {
+				it.cross = c.clampW(v, cw)
+			} else if it.stretch && finite(cw) && !e.wrap {
+				it.cross = c.clampW(cw-it.marginCr, cw)
+			} else {
+				it.cross = fitWidth(c, cw-it.marginCr, cw)
+			}
+			it.crossKnown = true
 		}
 		// The flex base size.
 		if v, ok := c.basis.resolve(base(mainSize)); ok {
 			it.base = v
+		} else if owns {
+			it.base = own
 		} else if row {
-			if v, ok := c.width.resolve(base(cw)); ok {
-				it.base = v
-			} else {
-				it.base = contentWidth(c, true)
-			}
+			it.base = contentWidth(c, true)
 		} else {
-			if v, ok := c.height.resolve(base(ch)); ok {
-				it.base = v
-			} else {
-				it.base = naturalHeight(c, crossOf(c, cw, align, e.wrap), ch)
-			}
+			it.base = naturalHeight(c, it.cross, ch)
 		}
 		// The automatic minimum is the content's, unless it scrolls or
 		// clips that way. Measuring the content cannot see the main size
@@ -747,8 +787,8 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 				it.minMain = v
 			} else if !c.scrolls() && c.flags&flagClipX == 0 {
 				it.minMain = min(intrinsic(c, false), it.maxMain)
-				if v, ok := c.width.resolve(base(cw)); ok {
-					it.minMain = min(it.minMain, v)
+				if owns {
+					it.minMain = min(it.minMain, own)
 				}
 			}
 		} else {
@@ -758,9 +798,9 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 			if v, ok := c.minH.lower(base(ch)); ok {
 				it.minMain = v
 			} else if !c.scrolls() && c.flags&flagClipY == 0 && c.grow == 0 {
-				it.minMain = min(heightAt(c, crossOf(c, cw, align, e.wrap), inf), it.maxMain)
-				if v, ok := c.height.resolve(base(ch)); ok {
-					it.minMain = min(it.minMain, v)
+				it.minMain = min(heightAt(c, it.cross, inf), it.maxMain)
+				if owns {
+					it.minMain = min(it.minMain, own)
 				}
 			}
 		}
@@ -792,7 +832,7 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 				cur.main += gap
 			}
 			cur.main += outer
-			items[i].line = len(scratch.lines) - firstLine
+			items[i].line = int32(len(scratch.lines) - firstLine)
 		}
 		cur.end = len(items)
 		scratch.lines = append(scratch.lines, cur)
@@ -822,26 +862,8 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 		ln := &lines[li]
 		for i := ln.start; i < ln.end; i++ {
 			it := &items[i]
-			c := it.e
-			if row {
-				if v, ok := c.height.resolve(base(ch)); ok {
-					it.cross = c.clampH(v, ch)
-				} else if c.aspect == 0 && stretches(c, align, true) && finite(ch) && !e.wrap {
-					// It stretches to its one line, as high as the row:
-					// measuring it first would change nothing, as across
-					// a column.
-					it.cross = c.clampH(ch-it.marginCr, ch)
-				} else {
-					it.cross = heightAt(c, it.main, ch)
-				}
-			} else {
-				if v, ok := c.width.resolve(base(cw)); ok {
-					it.cross = c.clampW(v, cw)
-				} else if stretches(c, align, false) && finite(cw) && !e.wrap {
-					it.cross = c.clampW(cw-it.marginCr, cw)
-				} else {
-					it.cross = fitWidth(c, cw-it.marginCr, cw)
-				}
+			if !it.crossKnown {
+				it.cross = heightAt(it.e, it.main, ch)
 			}
 			ln.cross = max(ln.cross, it.cross+it.marginCr)
 		}
@@ -911,17 +933,12 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 	for li := range lines {
 		ln := &lines[li]
 		for i := ln.start; i < ln.end; i++ {
-			it := &items[i]
-			c := it.e
-			if !stretches(c, align, row) {
-				continue
-			}
-			if row {
-				if _, ok := c.height.resolve(base(ch)); !ok && c.aspect == 0 {
-					it.cross = c.clampH(ln.cross-it.marginCr, ch)
+			if it := &items[i]; it.stretch {
+				if row {
+					it.cross = it.e.clampH(ln.cross-it.marginCr, ch)
+				} else {
+					it.cross = it.e.clampW(ln.cross-it.marginCr, cw)
 				}
-			} else if _, ok := c.width.resolve(base(cw)); !ok {
-				it.cross = c.clampW(ln.cross-it.marginCr, cw)
 			}
 		}
 	}
@@ -1033,19 +1050,6 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 		crossPos += ln.cross + crossGap + crossBetween
 	}
 	return usedW, usedH
-}
-
-// crossOf returns the width a column child gets: stretched to the column
-// or fitting its content. In a column that wraps, it fits its content, and
-// stretches only to its line, as wide as the widest there.
-func crossOf(c *node, cw float32, align Align, wrap bool) float32 {
-	if v, ok := c.width.resolve(base(cw)); ok {
-		return c.clampW(v, cw)
-	}
-	if stretches(c, align, false) && finite(cw) && !wrap {
-		return c.clampW(cw-c.marginX(), cw)
-	}
-	return fitWidth(c, cw-c.marginX(), cw)
 }
 
 // stretches reports whether c stretches across the line of a row (or a
@@ -1220,6 +1224,9 @@ func justifyOffsets(j Align, free float32, n int) (start, between float32) {
 // to left, as in CSS, one with neither Left nor Right goes to the right,
 // and Right wins over Left where its width leaves no room for both.
 func layoutAbsolute(e *node) {
+	if !e.absoluteChild {
+		return // no child out of the flow to place
+	}
 	pw, ph := e.w-e.border[1]-e.border[3], e.h-e.border[0]-e.border[2]
 	for c := e.first; c != nil; c = c.next {
 		if c.flags&flagAbsolute == 0 || c.leaving != 0 || c.hidden {
