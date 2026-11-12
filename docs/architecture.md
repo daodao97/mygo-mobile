@@ -19,6 +19,9 @@ framework safely. Read it before changing anything under `internal/`.
   timer (`TestSettledWindowSleeps`): the display link pauses, Go's
   scheduler sleeps, and the counter example idles at about 0.005% of a
   core on macOS (an AppKit window, 0.002%) and wakes no thread under X11.
+  The one exception is opt-in: while an app observes the clipboard on
+  macOS, which tells no one of changes, a timer reads the pasteboard's
+  change count every 250 ms (`Clipboard.OnChanged`).
 - **No cgo on desktop.** Desktop builds use `CGO_ENABLED=0`, so they can be
   cross-compiled from any machine. Native APIs are called at run time through
   [purego](https://github.com/ebitengine/purego) (`dlopen` + assembly
@@ -610,7 +613,11 @@ by `mygo build` with `mygo_noinspector`) leave out its downloader and
   class of the windows and the app id after the program, as the desktop
   entry does (`StartupWMClass`), and WebKitGTK the directories of the
   pages' data. Started through a link of another name, as `linux.command`
-  puts in `/usr/bin`, the app is then the same program.
+  puts in `/usr/bin`, the app is then the same program. An app that named
+  the program itself before `Run` (`g_set_prgname`), as one does to give
+  its windows the reverse-DNS ID of its desktop entry, keeps its name:
+  GLib leaves the name unset until `gtk_init_check`, so `Init` names the
+  program only while `g_get_prgname` is `NULL`.
 - `Bounds` are those of the frame a reparenting X11 window manager puts
   around the window (`gdk_window_get_frame_extents`): GTK positions the
   frame (NORTH_WEST gravity) and sizes the window inside it, without the
@@ -2540,6 +2547,19 @@ answers once `navigator.clipboard.writeText` settles (it rejects without
 transient user activation, and outside secure contexts there is no
 `navigator.clipboard` to write).
 
+`Clipboard.OnChanged` keeps its listeners in a `listeners[func()]` and
+shares one backend watch across them, started once the app is ready. The
+core coalesces notifications and defers callbacks until clipboard operations
+and other change callbacks unwind; removing the last listener stops the
+watch, and so does quitting. Only apps that observe the clipboard link the
+watch: the first `OnChanged` hooks it into the clipboard's operations and
+`App.OnQuit`.
+Windows uses its hidden app window for `WM_CLIPBOARDUPDATE`, GTK reuses its
+owner-change signal, and macOS installs an NSTimer only while subscribed,
+with a tolerance of a tenth of its interval. Observation never reads
+clipboard types or providers. Browser and unsupported backends refuse the
+watch, which leaves the listeners uncalled.
+
 ## Audio (`audio`)
 
 Package `audio` is independent of windows and the main thread: it neither
@@ -2551,7 +2571,8 @@ stream, playing silence for one that is late. Voices resample to 48 kHz
 stereo at their rate times their speed, and ramp their gains (a 2×2 matrix
 of volume and pan) over 5 ms on every change, pause and resume. Looping
 happens in the source, so a loop has no gap; the voice counts frames past
-it modulo the length for `Position`.
+it modulo the length for `Position`. A stream's decoder sleeps until a
+quarter of its ring is free.
 
 Up to one source frame an output frame, a voice interpolates with a
 Catmull-Rom spline. Faster (a sound above 48 kHz, or one sped up), a spline
@@ -2599,24 +2620,29 @@ stream waiting for its decoder, and a pause playing out. A seek or a
 stop drops them, so the position is the target at once and stands there
 until the output plays what it mixed since.
 
-The output (`audio/output.go`) is a goroutine locked to one thread that
+The output (`audio/output.go`) is a goroutine that
 opens the device when a voice starts, mixes 10 to 21 ms at a time and
 writes it with a call that blocks while the device holds enough, and
 closes the device after five idle seconds. `audio.SetLatency` chooses how
 much the device holds ahead, 40 ms or 250 ms; the output opens it again
-when that changes. Each platform gives one `openDevice`, which takes it:
+when that changes. It yields once a buffer, or the runtime would keep
+waking to take back the P it holds in C, and writes without allocating:
+through a `cCaller` (`audio/ccall.go`), and `syscall.SyscallN` on
+Windows. Each platform gives one `openDevice`, which takes it:
 
 - macOS: an Audio Queue of buffers of 512 frames, as many as hold that (4
-  or 24), started once all hold audio; its callback, created once, hands
-  buffers back over a channel. A theme change can keep every thread of an
-  app waiting for up to 0.2 s, which 4 buffers do not ride out.
+  or 24), started once all hold audio; its callback is
+  `dispatch_semaphore_signal`, which the output waits on. A theme change
+  can keep every thread of an app waiting for up to 0.2 s, which 4
+  buffers do not ride out.
 - Linux: `pa_simple_write` of PulseAudio's simple API (`libpulse-simple`,
   which PipeWire serves too) with that as its target, else ALSA's
   `snd_pcm_writei` on `default`, both through purego.
 - Windows: WASAPI in shared mode, event driven, with a buffer of that,
   `AUTOCONVERTPCM` and the default-quality resampler; it compares the
   default endpoint's ID every 500 ms and fails the write when it changed,
-  which reopens the device.
+  which reopens the device. The output stays on the thread that
+  initialized COM.
 - Browsers: an AudioWorklet from a Blob URL that queues chunks of 1024
   frames (three, or twelve) and posts a request whenever it used one; the
   output waits for a request before mixing the next, and asks more or
@@ -4100,6 +4126,14 @@ either.
   scroll bar's thumb keeps the content's size of when it was grabbed until
   it is let go, as rows measured meanwhile change it, and a frame that
   moved a list whose `Visible` or `AtEnd` the view read builds another.
+  `EndReached` is called after the frame is laid out (`callListEnds`,
+  before `next`, which builds another frame for what it changed): each
+  layout checks whether the rows in view are within `NearEnd` of the end
+  and whether the user scrolled the list in this frame (`userAt`, set
+  where `sync` finds an offset the list did not write, and by requests
+  the keys and assistive technology make; a request of the app's clears
+  it), and queues the list on the engine once as the rows come near,
+  again only once they left or the rows changed in number.
   Rows built as a list lays out handle their input as the view's do,
   which `layoutTree` then forgets, asking for a frame if they changed
   anything, and lays out what they put in the overlay. Rows a `ScrollTo`
@@ -4410,7 +4444,9 @@ either.
     state and actions (`FindBar`, `DiffSeparator`, ...), whose values
     the editor reads back after the build, as a query typed. Separators
     are built by the diff view across both sides, over the room their
-    blocks leave.
+    blocks leave, and the sides' find and go to line bars after them, in
+    a box over each side that lets the pointer through, so that the
+    separators do not cover them.
 - **Markdown** (`ui/markdown`), on ui's public API as `ui/editor` is, whose
   tokenizers highlight its code. The parser, `ui/markdown/parser`,
   imports nothing of ui, so that `ui/richtext` reads Markdown without the
@@ -5267,9 +5303,23 @@ either.
   would not show. A path whose mask finds no room draws as tiles at once,
   and the runtime's repaint (`System.MakeRoom`) draws the frame's large
   paths as tiles, which pack eight to a row of the largest atlas: the
-  room made lets go of the masks of those the paint drew before
+  room made lets go of the masks of those the frame's paints drew before
   (`System.Unkeep`), which it would keep as the frame drew them, and
-  which would leave the tiles no room. On the
+  which would leave the tiles no room. A mask wider or taller than the
+  current atlas (including its padding pixel) does not start that lasting
+  tiled mode: the atlas can grow to its dimensions, and other paths keep
+  trying whole masks so their dimensions guide that growth too, without
+  rasterizing bitmaps whose dimensions cannot fit yet. If the
+  coverage atlas is still full before the last recovery paint, the runtime
+  releases large paths' masks and switches to tiles: a tile, icon or glyph
+  may have found no room, without a whole path mask failing. Cached tiles
+  go too when switching to tiled mode, so their lasting shelves leave room
+  for transient tiles. Already-tiled frames keep that cache for compaction;
+  repeated mask requests can use lasting shelves even if their first
+  allocation failed or their cached mask was released, falling back to
+  transient shelves when only those have room after `MakeRoom` has run
+  that frame. The first lasting miss still requests recovery, so stale
+  masks cannot keep a repeated mask transient indefinitely. On the
   pixel grid tiles show the pixels of one mask; under a transform off
   it, a faint line where they meet. `Path.Contains` counts the winding
   of the path flattened at four times its scale; an element's `HitTest`,
@@ -6316,11 +6366,14 @@ make it work:
   `codesign --deep` only covers code directories and notarization rejects
   unsigned code: Mach-O files, then the bundles holding them, deepest
   first, as a bundle's signature seals what it holds (and signing its main
-  executable signs the whole bundle). A real identity signs all of it,
-  keeping the entitlements of each (`--preserve-metadata`) unless
-  `macos.helperEntitlements` names others; ad hoc signing only signs code
-  without an `LC_CODE_SIGNATURE`, and the bundles around it, so vendors'
-  signatures stay. Windows builds sign the PE images among the resources
+  executable signs the whole bundle). A real identity signs all of it in
+  a production build, keeping the entitlements of each
+  (`--preserve-metadata`) unless `macos.helperEntitlements` names others;
+  ad hoc signing, and a development build under any identity, only sign
+  code without an `LC_CODE_SIGNATURE`, and the bundles around it, so
+  vendors' signatures stay (`keepsSignatures`: macOS 27 shows a program
+  signed by an Apple Development certificate less than the same program
+  signed ad hoc or by its vendor, such as other processes' sockets). Windows builds sign the PE images among the resources
   that have no certificate table, with the app's certificate or command.
   The packages of the app may name native libraries in a
   `mygo-plugin.json` (`natives.go`, the format in `internal/nativelib`),

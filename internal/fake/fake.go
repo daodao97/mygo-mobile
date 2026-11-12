@@ -10,6 +10,7 @@ import (
 	"image"
 	"image/png"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -86,9 +87,14 @@ type Backend struct {
 	// ClipboardDuringFlush simulates a toolkit pumping a nested event loop
 	// after releasing providers but before its storage operation returns.
 	ClipboardDuringFlush func()
-	theme                string
-	prefs                platform.Preferences
-	prefsReads           int
+	// ClipboardWatchError injects a failure to start observing changes.
+	ClipboardWatchError error
+	// ClipboardWatchStarts and ClipboardWatchStops count native watches.
+	ClipboardWatchStarts, ClipboardWatchStops int
+	clipboardChanged                          func()
+	theme                                     string
+	prefs                                     platform.Preferences
+	prefsReads                                int
 	// languages and region are the user's (SetSystemLanguages,
 	// SetSystemRegion); en-US without them.
 	languages []string
@@ -618,6 +624,8 @@ type Window struct {
 	// capture is the page's capture of each kind (SetCapture).
 	capture [platform.CaptureDisplay + 1]platform.CaptureState
 	pip     bool // TogglePictureInPicture
+	// ignoreMouse is what SetIgnoreMouseEvents was given last.
+	ignoreMouse bool
 	// Restored is the last state RestoreSessionState put back.
 	Restored []byte
 	// Dropped is what DroppedFiles returns, once.
@@ -832,7 +840,8 @@ func (w *Window) SetOpacity(float64)              {}
 func (w *Window) Opacity() float64                { return 1 }
 func (w *Window) SetHasShadow(bool)               {}
 func (w *Window) HasShadow() bool                 { return true }
-func (w *Window) SetIgnoreMouseEvents(bool)       {}
+func (w *Window) SetIgnoreMouseEvents(v bool)     { w.mu.Lock(); w.ignoreMouse = v; w.mu.Unlock() }
+func (w *Window) IgnoresMouseEvents() bool        { w.mu.Lock(); defer w.mu.Unlock(); return w.ignoreMouse }
 func (w *Window) SetContentProtection(bool)       {}
 func (w *Window) SetVibrancy(string)              {}
 func (w *Window) SetVibrancyTint(*platform.Color) {}
@@ -1188,6 +1197,26 @@ func (d dialogs) ShowMessageBox(_ platform.Window, o *platform.MessageBoxOptions
 
 type clipboard struct{ b *Backend }
 
+func (c clipboard) WatchChanges(changed func()) (func(), error) {
+	if c.b.ClipboardWatchError != nil {
+		return nil, c.b.ClipboardWatchError
+	}
+	c.b.ClipboardWatchStarts++
+	c.b.clipboardChanged = changed
+	return func() {
+		c.b.ClipboardWatchStops++
+		c.b.clipboardChanged = nil
+	}, nil
+}
+
+// EmitClipboardChange simulates a native change without reading clipboard
+// providers. Like native callbacks, it must run on the main thread.
+func (b *Backend) EmitClipboardChange() {
+	if b.clipboardChanged != nil {
+		b.clipboardChanged()
+	}
+}
+
 func (c clipboard) ReadText() string   { b, _ := c.b.clipboard.Read(transfer.Text); return string(b) }
 func (c clipboard) WriteText(s string) { _ = c.WriteData(transfer.TextData(s), false, nil) }
 func (c clipboard) ReadHTML() string   { b, _ := c.b.clipboard.Read(transfer.HTML); return string(b) }
@@ -1228,6 +1257,7 @@ func (c clipboard) WriteData(d transfer.Data, concealed bool, released func()) e
 	if len(d.Formats()) == 0 {
 		c.release()
 	}
+	c.b.EmitClipboardChange()
 	return nil
 }
 func (c clipboard) release() {
@@ -1277,6 +1307,12 @@ var Trashed []string
 func (shell) TrashItem(path string) error {
 	Trashed = append(Trashed, path)
 	return nil
+}
+
+func (shell) TrashItemResult(path string) (string, error) {
+	Trashed = append(Trashed, path)
+	// Return a synthetic trash path so callers can test restore without a real Trash.
+	return filepath.Join(os.Getenv("HOME"), ".Trash", filepath.Base(path)), nil
 }
 
 // Previewed are the paths PreviewItem was given.

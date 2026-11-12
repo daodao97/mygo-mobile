@@ -428,4 +428,21 @@ export const showcase: ShowcaseApp[] = [
     mode: "native",
     image: "/showcase/framely.png",
   },
+  {
+    name: "MyGO Wallhaven",
+    description:
+      "An open-source Wallhaven wallpaper client built with Go and MyGO's native UI. Browse recommendations, search and filter wallpapers by resolution, aspect ratio and color, preview full-size images, save local favorites, manage resumable downloads, and set your desktop wallpaper.",
+    url: "https://github.com/MaLuns/wallhaven",
+    author: "MaLuns",
+    mode: "native",
+  },
+  {
+    name: "goFinder",
+    description:
+      "A keyboard-and-mouse file manager for macOS that brings Yazi's three columns and single-key actions to a native window. Filter as you type, even by pinyin initials, preview with Quick Look, split the window into two panes, and open an AI agent in the current folder.",
+    url: "https://github.com/aoyamashou/goFinder",
+    author: "aoyamashou",
+    mode: "native",
+    image: "/showcase/gofinder.jpg",
+  },
 ]

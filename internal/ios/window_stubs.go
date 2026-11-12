@@ -35,6 +35,7 @@ func (w *window) Opacity() float64                           { return 1 }
 func (w *window) SetHasShadow(v bool)                        {}
 func (w *window) HasShadow() bool                            { return false }
 func (w *window) SetIgnoreMouseEvents(v bool)                {}
+func (w *window) IgnoresMouseEvents() bool                   { return false }
 func (w *window) SetContentProtection(v bool)                {}
 func (w *window) SetVibrancy(material string)                {}
 func (w *window) SetActiveAppearance(bool)                   {}

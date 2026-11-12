@@ -71,6 +71,8 @@ func (w *window) HasShadow() bool { return false }
 
 func (w *window) SetIgnoreMouseEvents(v bool) {}
 
+func (w *window) IgnoresMouseEvents() bool { return false }
+
 func (w *window) SetContentProtection(v bool) {}
 
 func (w *window) SetVibrancy(material string)  {}

@@ -209,6 +209,10 @@ func platformBridge() PlatformBridge {
 // something this backend failed to implement.
 type androidClipboard struct{}
 
+// WatchChanges is unsupported: Android 10 and later tell only the app with the
+// focus that the clipboard changed, and this backend does not listen for it.
+func (androidClipboard) WatchChanges(func()) (func(), error) { return nil, platform.ErrUnsupported }
+
 // Formats lists the clipboard's representations as transfer formats: what the
 // clip advertises, kept to the ones this backend can decode.
 //
@@ -568,7 +572,8 @@ func (androidShell) ShowItemInFolder(string) {}
 // the file manager, not an API an app can move a file into. Deleting content
 // the app itself owns belongs to that app (MediaStore, Storage Access
 // Framework), not to a shell call.
-func (androidShell) TrashItem(string) error { return platform.ErrUnsupported }
+func (androidShell) TrashItem(string) error                 { return platform.ErrUnsupported }
+func (androidShell) TrashItemResult(string) (string, error) { return "", platform.ErrUnsupported }
 
 // PreviewItem: Android has no Quick Look panel.
 func (androidShell) PreviewItem(string) error { return platform.ErrUnsupported }
