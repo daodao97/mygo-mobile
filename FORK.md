@@ -4,7 +4,7 @@
 
 ## 快照（2026-11-12）
 
-- fork `main` 已合并 `upstream/main`：`0d644f4a`（含 0.9.0）；fork 落后上游 0 个提交。
+- fork `main` 已合并 `upstream/main`：`1c40ba32`（含 0.9.0）；fork 落后上游 0 个提交。
 - fork 独有的非合并提交：158 个；与上游的增删差异约 71,000 行。
 - 2026-11-08 同步了上游 26 个提交（`1dfa5a1f..80013ac3`）。冲突只有两处：`go.mod` 取上游新增的 flac/aac 依赖，保留 fork 的 `Heyana/typesetting-go`；`ui/layoutcache_test.go` 的字段清单两边都保留（上游的 `popupSet`、fork 的触摸/输入字段）。上游新增的 `Window.SetInputRegion` 是可选接口 `platform.InputRegionWindow`，iOS/Android 不需要实现；`ListRow.Hovered`/`Pressed`/`PointerPosition`、终端 `Options.OnDrop` 在 fork 中没有对应实现，没有需要按规则 1 处理的重叠。
 - 2026-11-09 同步了上游 39 个提交（到 `6a730f12`）。冲突：`docs/architecture.md` 两边都保留（fork 的 iOS 段落、上游的 `ffi`）；`ui/runtime.go` 两边都保留（fork 的帧计时、上游的 `sweepVideos`）；`ui/layoutcache_test.go` 字段清单取并集；`internal/gpu/gl/load_linux.go` 只取上游新增的 `uploadElement`，`setShaderSource`/`shaderLog`/`programLog`/`infoLog` 在 fork 已移到 `load_common.go`（与 Android 共用）；终端 `urlPattern` 按规则 1 改用上游 #1481（URL 在第一个非 ASCII 字符处结束），fork 的写法删除；shader 二进制取上游后重新 `go generate`。上游 #1476 给 `platform.Clipboard.WriteData` 加了 `concealed` 参数，iOS/Android 后端已跟上签名，但还没有标记机密内容（iOS 的 `UIPasteboard` localOnly、Android 的 `EXTRA_IS_SENSITIVE`）。
@@ -24,6 +24,8 @@
   | Windows | 10,055,168 → 10,066,944（+11,776） | 9,666,560 → 9,679,872（+13,312） |
 
   增长来自本批上游通用改动，按规则 1 保留上游实现。macOS hello 的 `-dumpdep` 和符号比较确认，新增客户端证书路径由 `window.authChallenge → clientCertificate → keychainIdentities → platform.CertificateIssuer` 链入；语言匹配缓存由 `missingTranslations → i18n.Match → i18n.match` 链入。counter-native 还包含新的 UI 布局、滚动条和生命周期逻辑。未引入 fork 的重依赖或新的共享路径反射查找。
+- 2026-11-12 第二次同步上游 32 个提交（`0d644f4a..1c40ba32`），无冲突。上游 `3e3c6534`（Linux 全局快捷键描述）把 `platform.Backend.RegisterHotkey` 改为三个参数（新增 `description`），并给 `AppHandler` 加了 `HotkeyBound`；iOS/Android 没有自己的 `RegisterHotkey`，iOS vet 与 Android `.so` 构建均通过，不需要改动。对照这批新增检查了 fork 代码：上游的 `Handle.SelectAll` 是应用层 API，fork 测试里的 `"selectAll"` 是 iOS 编辑菜单发来的平台 `SurfaceCommand`，两者不同层；TokenField `Query`、`PopoverMenuButtonOptions.Item`、拖拽源消失后保持拖拽、编辑器行样式、Markdown 任务复选框与锚点、SVG `var()`/文本/marker 在 fork 中没有同功能实现；`ui/combobox.go` 的 inline combobox 自动合并后测试通过。
+  验证：`go build ./...`、`go vet . ./ui`、`go test . ./ui ./internal/text ./plugins/terminal/...`（2843 项）通过；Miya 通过临时 go.work 指向本地 fork 后 `go build ./...`、`go vet ./...` 通过；`go generate ./ui` 无差异。
 - 约 2/3 是 iOS/Android，其余是对上游的扩展和待提交回上游的修复。共享代码中已没有已知的重复实现（见「已清理的重复实现」）。
 
 ## 规则
