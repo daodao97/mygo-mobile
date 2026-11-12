@@ -329,6 +329,7 @@ var elementChains = map[string]bool{
 	"PositionInSet":        true,
 	"PreserveSpaces":       true,
 	"Pretty":               true,
+	"Query":                true,
 	"RadialGradient":       true,
 	"Radius":               true,
 	"Range":                true,

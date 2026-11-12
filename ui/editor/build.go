@@ -28,6 +28,7 @@ func View(c *ui.Context, st *State) ui.Element {
 
 // build builds the element of an editor for a frame.
 func (ed *editor) build(c *ui.Context, buf *Buffer, o options) ui.Element {
+	ed.view.sys = c.TextSystem()
 	ed.texts = l10n.In(c.Locale())
 	ed.init(buf, o, c.Theme())
 	ed.services = c.Services()
@@ -76,8 +77,13 @@ func (ed *editor) build(c *ui.Context, buf *Buffer, o options) ui.Element {
 		}
 	}
 	e.HandleInput(ed.input)
-	switch ed.region {
-	case regionText:
+	// Cmd held or let go with the pointer still draws a frame, which
+	// shows the link or takes it away.
+	ed.link = ed.linkAt(c.Modifiers())
+	switch {
+	case ed.link[1] > ed.link[0]:
+		e.Cursor(ui.CursorPointer)
+	case ed.region == regionText:
 		e.Cursor(ui.CursorText)
 	default:
 		e.Cursor(ui.CursorDefault)
@@ -137,7 +143,7 @@ func (ed *editor) build(c *ui.Context, buf *Buffer, o options) ui.Element {
 		}
 		var caretAnchor, hoverAnchor ui.Element
 		var hasCaret, hasHover bool
-		if ed.complete.open() {
+		if ed.completing() {
 			caretAnchor, hasCaret = anchor("code caret", ed.complete.at)
 		}
 		if h.shown {

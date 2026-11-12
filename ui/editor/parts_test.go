@@ -503,3 +503,79 @@ func TestCodeEditorNoPointerHover(t *testing.T) {
 		t.Fatalf("ShowHover asked %d times", asked)
 	}
 }
+
+// TestCodeEditorDefinitionLink checks that, with Cmd held over a word of
+// an editor that goes to definitions, the word shows as a link under a
+// pointing hand, and that letting go of Cmd takes it away.
+func TestCodeEditorDefinitionLink(t *testing.T) {
+	st := &State{Buffer: NewBuffer("first line\nsecond line\n")}
+	tt := ui.NewTester(func(c *ui.Context) { View(c, st).Fill() }, 600, 300)
+	tt.Frame()
+	tt.Move(st.ed.textX+st.ed.view.charWidth*2, 5)
+	tt.HoldModifiers(ui.Cmd)
+	tt.Frame()
+	if st.ed.link != ([2]int{}) || tt.Cursor() == ui.CursorPointer {
+		t.Fatalf("a link %v with no OnDefinition", st.ed.link)
+	}
+	st.OnDefinition = func(int) {}
+	tt.Frame()
+	if st.ed.link != [2]int{0, 5} || tt.Cursor() != ui.CursorPointer {
+		t.Fatalf("link %v, cursor %v over \"first\" with Cmd held", st.ed.link, tt.Cursor())
+	}
+	// The tester's moves bring no modifiers, as a move with Cmd let go.
+	tt.Move(st.ed.textX+st.ed.view.charWidth*8, 5)
+	tt.HoldModifiers(ui.Cmd)
+	if st.ed.link != [2]int{6, 10} {
+		t.Fatalf("link %v over \"line\"", st.ed.link)
+	}
+	tt.HoldModifiers(0)
+	tt.Frame()
+	if st.ed.link != ([2]int{}) || tt.Cursor() != ui.CursorText {
+		t.Fatalf("link %v, cursor %v after Cmd was let go", st.ed.link, tt.Cursor())
+	}
+}
+
+// TestCodeEditorNoDefinitionClick checks that NoDefinitionClick leaves
+// Cmd+click to the other clicks, with no link, while F12 still goes to
+// the definition, and that NoDefinitionLink keeps the click but not the
+// link.
+func TestCodeEditorNoDefinitionClick(t *testing.T) {
+	var asked []int
+	st := &State{Buffer: NewBuffer("first line\nsecond line\n"), NoDefinitionClick: true,
+		OnDefinition: func(off int) { asked = append(asked, off) }}
+	tt := ui.NewTester(func(c *ui.Context) { View(c, st).Fill() }, 600, 300)
+	tt.Frame()
+	x := st.ed.textX + st.ed.view.charWidth*2
+	tt.Move(x, 5)
+	tt.HoldModifiers(ui.Cmd)
+	tt.Frame()
+	if st.ed.link != ([2]int{}) || tt.Cursor() == ui.CursorPointer {
+		t.Fatalf("link %v, cursor %v with NoDefinitionClick", st.ed.link, tt.Cursor())
+	}
+	tt.ClickAtWith(ui.Cmd, x, 5)
+	tt.Frame()
+	if len(asked) != 0 {
+		t.Fatalf("Cmd+click went to the definitions at %v", asked)
+	}
+	tt.Key(0, ui.KeyF12)
+	tt.Frame()
+	if len(asked) != 1 || asked[0] != 2 {
+		t.Fatalf("F12 went to the definitions at %v, not at 2", asked)
+	}
+
+	asked = nil
+	st.NoDefinitionClick, st.NoDefinitionLink = false, true
+	// Long enough after the first click not to be its double click.
+	tt.Advance(time.Second)
+	tt.Move(x, 5)
+	tt.HoldModifiers(ui.Cmd)
+	tt.Frame()
+	if st.ed.link != ([2]int{}) || tt.Cursor() == ui.CursorPointer {
+		t.Fatalf("link %v, cursor %v with NoDefinitionLink", st.ed.link, tt.Cursor())
+	}
+	tt.ClickAtWith(ui.Cmd, x, 5)
+	tt.Frame()
+	if len(asked) != 1 || asked[0] != 2 {
+		t.Fatalf("Cmd+click went to the definitions at %v, not at 2", asked)
+	}
+}

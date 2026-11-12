@@ -785,6 +785,42 @@ func TestExit(t *testing.T) {
 	}
 }
 
+// TestNoExitMessage: with NoExitMessage, the screen keeps what the
+// program wrote and no line about its end, which OnExit, Done and
+// ExitCode still tell; nor does a Conn's end write "[Disconnected]".
+func TestNoExitMessage(t *testing.T) {
+	loadLib(t)
+	exited := make(chan int, 1)
+	term := shell(t, Options{
+		Command:       []string{"/bin/sh", "-c", "printf bye; exit 3"},
+		NoExitMessage: true,
+		OnExit:        func(code int) { exited <- code },
+	})
+	if code := wait.For(t, "the exit", exited); code != 3 {
+		t.Errorf("exit code = %d", code)
+	}
+	wait.For(t, "Done", term.Done())
+	if term.ExitCode() != 3 {
+		t.Errorf("ExitCode = %d", term.ExitCode())
+	}
+	if text := strings.TrimRight(term.Text(), "\n"); text != "bye" {
+		t.Errorf("text %q, want only the program's", text)
+	}
+
+	conn := newPipe()
+	remote, err := New(Options{Conn: conn, NoExitMessage: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer remote.Close()
+	remote.Feed([]byte("remote"))
+	conn.Close()
+	wait.For(t, "Done", remote.Done())
+	if text := strings.TrimRight(remote.Text(), "\n"); text != "remote" {
+		t.Errorf("text %q, want only what Conn sent", text)
+	}
+}
+
 func TestMenus(t *testing.T) {
 	loadLib(t)
 	conn := newPipe()

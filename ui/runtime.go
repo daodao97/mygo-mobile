@@ -67,6 +67,10 @@ type host interface {
 	// regional formats; they cost nothing.
 	locale() string
 	region() i18n.Region
+	// textSystem returns the text system the window's frames shape and
+	// paint in: a Tester's window has one of its own, so Testers run in
+	// parallel, and the other windows share the process's.
+	textSystem() *text.System
 	// rightToLeft reports whether the window is laid out right to left,
 	// as its language reads.
 	rightToLeft() bool
@@ -215,6 +219,9 @@ type engine struct {
 	built      []*state
 	nbuilt     int
 	builtCheck map[*state]bool // checkBuilt's
+	// builtSnap is what the view built, the checkBuilt of the tests: its
+	// own of the engine's, as Testers check their frames in parallel.
+	builtSnap *builtSnapshot
 	// targetsBuilt is the frame and pass that last made an element a
 	// native drop target (DropData, DataDragOver): syncDropFormats looks
 	// for their formats only when they are this frame's last pass.
@@ -692,7 +699,7 @@ type keyEvent struct {
 }
 
 func newRuntime(view func(*context), h host) *engine {
-	rt := &engine{view: view, host: h, text: textSystem(), states: map[uint64]*state{}, windowFocused: true}
+	rt := &engine{view: view, host: h, text: h.textSystem(), states: map[uint64]*state{}, windowFocused: true}
 	rt.c.rt = rt
 	rt.owner = weak.Make(rt)
 	rt.arena = &elementOwner{rt: rt}
@@ -777,9 +784,14 @@ func (rt *engine) runFrame() {
 	rt.routeKeys()
 	rt.glideWheels(now)
 	rt.glideSnaps(now)
-	if rt.drag != nil {
+	if d := rt.drag; d != nil {
+		// A copy of the source as it first showed, for the frames that
+		// build it no more.
+		if d.elem != nil && d.ghost == nil && !d.native {
+			d.ghost = dragGhost(d.elem)
+		}
 		// The source's element is this frame's, if it builds one.
-		rt.drag.elem = nil
+		d.elem = nil
 	}
 	rt.dragScroll()
 	rt.scrollTextSelection()
@@ -987,6 +999,7 @@ func (rt *engine) runFrame() {
 	// than what it was over as the press began, in the frame this asks
 	// for.
 	rt.rehover(true)
+	rt.retarget()
 	rt.armTimer()
 	rt.showMenu()
 	rt.c.finish()
@@ -1283,6 +1296,10 @@ func (rt *engine) prune() {
 		if rt.pressLost != nil {
 			input, gone, x, y = rt.pressLost, true, rt.pressLostX, rt.pressLostY
 		}
+		if gone && rt.pressLost == nil && rt.draggingFrom(p.id) {
+			// It drags a value on: see below.
+			gone = false
+		}
 		if gone {
 			rt.endPress(input, x, y)
 			// A frame built anew for the press ended and what the handler
@@ -1300,6 +1317,12 @@ func (rt *engine) prune() {
 			break
 		}
 		if s.seen != rt.frame || s.pass != rt.pass {
+			if rt.draggingFrom(id) {
+				// The source of a value dragged within the window, as one
+				// in a view that went away: the press goes on dragging
+				// it, until it is let go of, to drop it.
+				continue
+			}
 			if !rt.keptAlive(s) {
 				if s.textAdapter != nil {
 					s.textAdapter.release()
@@ -1473,7 +1496,7 @@ func (rt *engine) close() {
 	rt.focusFields = nil
 	for _, r := range rt.refs {
 		r.closed = true
-		r.requested = false
+		r.requested, r.selectAll = false, false
 	}
 	clear(rt.refs)
 	rt.refs = nil

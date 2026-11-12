@@ -143,7 +143,10 @@ type Backend interface {
 	ReplaceFile(target, replacement string) error
 
 	NewTray(h TrayHandler) (Tray, error)
-	RegisterHotkey(id int, accelerator string) error
+	// RegisterHotkey makes accelerator a global shortcut. description says
+	// what it does, for desktops that show the app's shortcuts to the
+	// user; such desktops tell the keys they bound with HotkeyBound.
+	RegisterHotkey(id int, accelerator, description string) error
 	UnregisterHotkey(id int)
 
 	NotificationsSupported() bool
@@ -256,6 +259,9 @@ type AppHandler interface {
 	// called, when it may have changed.
 	NetworkChanged(status NetworkStatus)
 	HotkeyPressed(id int)
+	// HotkeyBound reports the keys a desktop that binds global shortcuts
+	// for apps has for one, as it writes them, "" when it bound none.
+	HotkeyBound(id int, keys string)
 	NotificationClicked(id string)
 	// MediaCommand reports a media key or a remote command for what
 	// NowPlaying shows; position is where MediaSeek asks to go.

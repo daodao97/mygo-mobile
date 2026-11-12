@@ -739,7 +739,12 @@ by `mygo build` with `mygo_noinspector`) leave out its downloader and
   KDE Plasma 5 binds the shortcuts listed in `CreateSession`'s options, as
   the portal's drafts had it: portals before 1.17 pass them on, later ones
   drop them and Plasma 5 then binds nothing; MyGo logs the shortcuts the
-  desktop bound no keys to. The activation token of an `Activated` signal
+  desktop bound no keys to. The desktop shows each shortcut's description
+  (`GlobalShortcutOptions.Description`, else the accelerator) where it asks
+  and in its settings, and the keys it answers with, in `BindShortcuts`'s
+  response and in later `ShortcutsChanged` signals, go to the shortcut's
+  `OnKeys` (`HotkeyBound`): none when the user declined it, which KDE
+  remembers without asking again. The activation token of an `Activated` signal
   becomes the display's startup notification id while the callback runs,
   so the window it shows or focuses may take the focus.
 
@@ -847,6 +852,22 @@ features GTK 4 lacks become X11-only code beside it.
   User data lives in `%LOCALAPPDATA%\<name>\WebView2`. The direct path applies
   `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` and `WEBVIEW2_USER_DATA_FOLDER` as
   the loader does; it does not read the channel variables or policy keys.
+- **Without WebView2 (`mygo_nowebview`).** What creates the environment
+  (`startEnvironment`, `createEnvironment`, the loader and the runtime's
+  lookup, `WebViewAvailable`) is in `webview2_env.go`, the only file
+  that imports `internal/webview2`. The tag `mygo_nowebview` builds
+  `webview2_env_off.go` instead: `startEnvironment` returns
+  `errBuiltWithoutWebView`, so `NewWindow` of a page fails (and
+  `mygo.NewWindow` panics with it), as do `NewWebView` and the cookie
+  calls, and `WebViewAvailable` is false. Every call of `createWebView`
+  is behind the constant `webViewBuilt`, false there, so the compiler
+  drops it, and the linker the code that creates and drives web views
+  (some 500 KB of `examples/counter-native`) and the strings antivirus
+  heuristics flag (`WebView2Loader.dll`, `msedgewebview2.exe`,
+  `CreateCoreWebView2EnvironmentWithOptions`, `WEBVIEW2_USER_DATA_FOLDER`).
+  A new path to a web view goes behind `webViewBuilt` too. For native-UI-only
+  apps, which pass it in `GOFLAGS` (`mygo build` adds those tags to its
+  own); CI vets the backend with it.
 - **Custom schemes** load from `http://<scheme>.localhost/`, and their
   other hosts from `http://<host>.<scheme>.localhost/` (`internal/schemehost`:
   hosts of DNS labels, lower-cased, without a port), which WebView2
@@ -3032,7 +3053,8 @@ either.
   in AriaProperties, which UI Automation has for ARIA's properties
   without one of its own: Core-AAM maps nothing in UI Automation nor in
   AX API, and Chromium nothing in UI Automation; `Combobox`,
-  `Autocomplete` and a `TokenField` with suggestions set it to list.
+  `Autocomplete` and a `TokenField` with suggestions or a `Query` set it
+  to list.
   `RoleDescription` (`AccessNode.RoleDescription`,
   aria-roledescription) is AppKit's `accessibilityRoleDescription`,
   which elements override, ATK's `roledescription` attribute and UIA's
@@ -3574,7 +3596,11 @@ either.
   window asks for the next picture with `After` at the engine's interval,
   or an engine that knows when one comes (GStreamer's appsink, the
   element's `requestVideoFrameCallback`) wakes it (`Engine.SetWake`),
-  as it does for a change of state. A muted video holds its engine paused
+  as it does for a change of state. The interval is asked for only once
+  the video loaded: AVFoundation's reads the nominal frame rate on the
+  engine's goroutine once the item is ready to play, as reading an
+  `AVURLAsset`'s tracks before then loads them, over the network, on the
+  thread that asks (#1743). A muted video holds its engine paused
   while out of sight, under less motion, and once a frame that built the
   view did not show it (`engine.sweepVideos`); one with sound plays on.
   On Windows, arm64's doubles go through two thunks of machine code, as
@@ -4169,7 +4195,14 @@ either.
   Label (`nameFrom`). Backends treat combo boxes as text fields (macOS
   `AXComboBox`, ATK combo box with AtkEditableText, UIA ComboBox with
   Value and ExpandCollapse); `AccessSearch` makes a text field AppKit's
-  `AXSearchField`.
+  `AXSearchField`. A token field's input edits a local of the field, not
+  a value of the app's: `Query`, called after the constructor took the
+  input, copies it to the app's string and keeps what it copied
+  (`tokenQuery.published`), so that a string the app changed since is
+  the app's, which the input takes as a text input takes a value the app
+  sets. While the build before called `Query` (`tokenQuery.bound`), the
+  app matches the suggestions, which the field shows as given rather than
+  `matching` the text; the pass that first binds it builds again.
 - **Disclosures** (`ui/collapsible.go`). A collapsible's trigger is a
   `RoleDisclosure`, expanded while open: AppKit's `AXDisclosureTriangle`,
   whose value is 1 while open; a toggle button that is expandable, and
@@ -4307,6 +4340,16 @@ either.
     through their newline join the hidden spans. Replacements move as
     selections do, and a change lays out again only the lines of those
     that differ, so that an app can set them every frame.
+  - *Line styles* (`line_styles.go`). A styled line is laid out by a view
+    of its own style (`styledView`), one per font and line height, which
+    shares the editor's text, highlighter, inlays and replacements and
+    keeps its own widths, shaped rows and layouts; the layouts carry
+    their rows' height and metrics (`lineLayout.rowHeight`), which every
+    place painting or hit-testing a row uses. The heights keep the
+    styled lines' row heights (`heights.styles`), each adding the
+    difference from the editor's to the entries blocks add to, so that
+    `top` and `lineAt` are unchanged, a line's height known from its
+    font's metrics without laying it out.
   - *Highlighting* (`syntax.go`). A `Highlighter` follows the buffer's
     edits and gives tokens per line; the default tokenizes lines from the
     state the line above ended in (`lexer.go`, `lexers.go`), keeping the
@@ -4401,7 +4444,16 @@ either.
   HTML of that Markdown parsed again, which `ui/richtext` pastes with its
   formatting, as it reads Markdown with the same parser
   (`ParseMarkdown`). Links open in the system only when `ui.SafeToOpen`
-  allows them, in both.
+  allows them, in both. Tasks' check boxes are boxes of `RoleCheckBox`,
+  read-only, or, with `Options.OnTask`, focusable and named by the plain
+  text of their item's first paragraph, kept by block while its start,
+  end and revision stay, so that a steady frame makes no name. The line
+  a click reports, and `CodeBlockView.SourceLine`, count the source's
+  line endings (`\n`, `\r\n` and `\r`, as the parser reads them) up to
+  the block's start when asked, rather than keeping a table of lines that
+  every edit would shift. `Options.AnchorBlock` resolves an anchor before
+  the headings' slugs; the view scrolls to a list item by its row, and to
+  a table's row or cell by the table, the elements it builds.
 - **Rich text** (`ui/richtext`). Package `richtext` edits attributed text
   on ui's public API, as `ui/editor` does: a focusable box with a text
   input client, `HandleInput`, `Draw`, `Access` and its own scrolling, and
@@ -4420,7 +4472,10 @@ either.
     `fixParagraphStyleAttributeInRange:`, but for the app's `ID`, which
     follows the text and never comes from what is inserted. Lists are
     flat, an indent per item, as Quill and Automerge keep them, which
-    leaves room for a CRDT.
+    leaves room for a CRDT. `QuoteDepth` keeps quotation nesting separately
+    from list indentation; the existing `Quote` flag with zero depth means
+    one level. Splitting and joining paragraphs, undo, JSON, HTML and
+    Markdown preserve the two dimensions independently.
   - *The document* (`document.go`, `commands.go`). A `Document` holds a
     text, the selection, the typing attributes, and the steps of undo as
     the texts before and after each, which share all they did not change,
@@ -5246,6 +5301,23 @@ either.
   `ui.Icon` keeps the coverage of that drawing for each size, which the
   GPU tints like a glyph, and `ui.Image` the colored pixels, as images
   whose textures it updates in place when only the text color changes.
+  The cascade substitutes custom properties (`var()`) and evaluates
+  `prefers-color-scheme` media queries; a document that has them is
+  compiled twice, light and dark, and `ui.Image` draws the one the
+  theme's `Dark` picks (`SVG.WithDark` fixes it). Text elements compile
+  to runs of one style and position that `svg.Doc.Draw` lays out through
+  an `svg.Fonts` it is given: ui's shapes each run with the text system
+  (`System.Shape`) and rasterizes its glyphs on the CPU, at the size they
+  show at, without the atlas (`System.GlyphBitmap`), into a coverage mask
+  the renderer paints as any shape's, in document order; text under a
+  rotation or a skew is sampled from upright glyphs. Markers compile to
+  nodes at the vertices of their path. What the cascade and the compiler
+  leave out, they report (`svg.Doc.Unsupported`, `SVG.Unsupported`).
+  Text, markers and style sheets are linked only into apps that call
+  `svg.Parse` (through `ui.ParseSVG`): ui's own icons, which every app
+  with native UI parses, go through `svg.ParseBasic` (`parseIcon`),
+  which reads presentation and style attributes alone, and a `Doc`
+  carries the functions that compile and draw its text and markers.
   An atlas logs the rectangles that change, so renderers upload only those.
   DirectWrite methods taking floats are called through purego, which sets
   the floating point registers that `syscall` leaves alone on ARM64.
@@ -5755,8 +5827,8 @@ either.
   ten times the CPU renderer's work on an animated page; and once a window
   has a GL context GTK composites it with OpenGL, so the choice is made
   before any surface has one; `MYGO_GPU=1` skips it and draws with OpenGL
-  wherever GDK makes a context, from the first frame, as the GUI tests of
-  CI do on llvmpipe. The devices answer first where they can: no GtkGLArea
+  wherever GDK makes a context and libepoxy loads, from the first frame,
+  as the GUI tests of CI do on llvmpipe. The devices answer first where they can: no GtkGLArea
   without NVIDIA's devices or a render node of a DRM driver with 3D
   (simpledrm, bochs, VirtualBox's or Hyper-V's only show what the CPU
   drew), nor on WSL's device without `GALLIUM_DRIVER=d3d12`. A GtkGLArea shows only
