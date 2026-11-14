@@ -103,7 +103,23 @@ printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/egoist/mygo => %s\n' "$APP" "$
 5. 生命周期：`Lifecycle` 系列在 #940 上用 active/resign 与 `Power` 重建，或让 Miya、myclash 改用 `App.IsActive`/`Power.OnSuspend`。
 6. 验证：`go build ./...`、`go vet . ./ui`、`../Miya` 用 `GOWORK=off` 编译与测试、myclash 编译，iPhone 上装 Miya 实测（安装步骤见 Miya 的 `docs/install-and-upgrade.md`；`build-ios.sh -ios-device` 用硬件 UDID，`devicectl` 用 CoreDevice 标识符）。
 
-在那之前：同步上游照常进行（`git fetch upstream` 后 `git merge --no-ff upstream/main`），并用 worktree `~/.cache/mygo-pr/mobile-940` 跟踪 #940 的变化（`git fetch upstream pull/1581/head:refs/remotes/pr/1581`）。
+在那之前：同步上游照常进行（`git fetch upstream` 后 `git merge --no-ff upstream/main`），并跟踪 #940 的变化。**跟踪 `upstream/mobile` 分支，不再跟踪 `pr/1581`**：#1581 的 head 停在 `6702121b`（2026-11-09），之后 #940 的提交都直接推到 `mobile`。查看新增：`git log --no-merges <上次的提交>..upstream/mobile ^upstream/main`。worktree `~/.cache/mygo-pr/mobile-940` 改为检出 `upstream/mobile`。
+
+#### 2026-11-14 跟踪到 `upstream/mobile` `2d314c44`
+
+从 `6702121b` 到 `2d314c44`，#940 自己的提交有 9 个，其余是它合进来的上游 `main`，fork 已经同步过：
+
+- **已提前收敛（通用部分，规则 1）**：iOS/Android 构建不再编译桌面文件。`GOOS=ios` 匹配 `darwin` 标签，`GOOS=android` 匹配 `linux` 标签。
+  - 移植了 `51f12a8d`、`7eecf682`。
+  - 补上了 #940 更早已有的部分：整个 `internal/darwin` 都标为 `darwin && !ios`，包括 fork 独有的 `trackpad_testhooks.go`；`plugins/automation` 的 `menu_darwin.go`/`menu_other.go` 改成 #940 的标签。只移植那两个提交会让 `internal/darwin` 在 iOS 上只编译一半，而 automation 在 iOS 上会导入它。
+  - 冲突处理：`load_android.go` 保留 fork 的版本，因为 fork 的 `load_common.go` 已经给 Android 提供 `uploadElement`；`dmabuf_other.go` 取上游写法。
+  - 验证：iOS 全量 `go vet` 通过（除 `cmd/mygo`、`internal/e2e`），Android `.so` 编译通过。
+- **还没对齐的构建标签**：`backend_other.go`、`content_rules_other.go`、`context_menu_other.go`、`audio/`、`internal/download`、`cmd/mygo/term_*`、`internal/e2e` 的其余文件。这些和 fork 自己的后端选择（`ios && cgo` 等）纠缠在一起，换后端时整体取 #940 的。
+- **要等第二阶段**：以下都依赖 `internal/mobile` 的 transport/nativehost 和 CLI 内嵌宿主，现在不移植。
+  - native 模块上手机：iOS 用 Swift，Android 用 Kotlin，含 `internal/nativegen/kotlingen.go`、`native/lib_android.go`（`07d78460`）。
+  - `plugins/sqlite` 上手机（`36cdb116`、`ae204203`）。
+  - 手机文档（`1781b743`、`2d314c44`）。
+- **已核实无需处理**：#940 对 permissionflow 的本地化已经在上游 `main`，fork 也有。两边 permissionflow 剩下的差别只有 fork 的 `phone.go` 桥接，按第二阶段第 2 步删。
 
 ## 差异分类
 
