@@ -3,6 +3,7 @@ package richtext
 import (
 	"bytes"
 	"fmt"
+	"github.com/egoist/mygo/transfer"
 	"runtime"
 	"slices"
 	"strings"
@@ -149,6 +150,26 @@ func TestRichTextCaretFormatIsNoStep(t *testing.T) {
 	tt.Key(0, ui.KeyLeft)
 	if doc.Formatting().Bold != FormatOff {
 		t.Fatal("moving the caret kept the typing attributes")
+	}
+}
+
+// Backspace takes a combining mark, or sara am, alone, and an emoji
+// sequence whole.
+func TestRichTextBackspaceMarks(t *testing.T) {
+	for _, c := range []struct{ s, want string }{
+		{"aนี้", "aนี"},
+		{"ทำ", "ท"},
+		{"❤️", ""},
+	} {
+		doc := NewDocument(TextOf(Paragraph{Runs: []Run{{Text: c.s}}}))
+		tt, _ := richTester(t, doc)
+		n := doc.Text().Len()
+		doc.SetSelection(n, n)
+		tt.Frame()
+		tt.Key(0, ui.KeyBackspace)
+		if got := doc.Text().String(); got != c.want {
+			t.Errorf("backspace in %q leaves %q, want %q", c.s, got, c.want)
+		}
 	}
 }
 
@@ -550,6 +571,42 @@ func TestRichTextParagraphKeys(t *testing.T) {
 	}
 }
 
+// Up and Down go to the line above and below however much room there is
+// between them, a heading's margin or Space, though it is over half a
+// line: the caret never stays where it was.
+func TestRichTextVerticalPastRoom(t *testing.T) {
+	doc := NewDocument(NewText("one\ntwo\nthree"))
+	theme := &Theme{Headings: [6]HeadingStyle{{Size: 1.5, Top: 2}}}
+	tt := ui.NewTester(func(c *ui.Context) {
+		Editor(c, doc, EditorOptions{Theme: theme, Space: func(p int) float32 {
+			if p == 1 {
+				return 40
+			}
+			return 0
+		}}).Fill()
+	}, 500, 400)
+	tt.Press(250, 380)
+	tt.Release(250, 380)
+	doc.SetSelection(5, 5) // in "two"
+	tt.Frame()
+	for _, step := range []struct {
+		key  ui.Key
+		para int
+	}{{ui.KeyUp, 0}, {ui.KeyDown, 1}, {ui.KeyDown, 2}, {ui.KeyUp, 1}} {
+		tt.Key(0, step.key)
+		if _, c := doc.Selection(); doc.Text().paraAt(c) != step.para {
+			t.Fatalf("past Space: %v to %d, want paragraph %d", step.key, c, step.para)
+		}
+	}
+	doc.SetSelection(9, 9) // in "three"
+	doc.SetHeading(1)
+	tt.Frame()
+	tt.Key(0, ui.KeyUp)
+	if _, c := doc.Selection(); doc.Text().paraAt(c) != 1 {
+		t.Fatalf("up from a heading with a wide margin to %d, want paragraph 1", c)
+	}
+}
+
 // TestRichTextLinkOpensSafely clicks links: only those ui.SafeToOpen
 // allows open, as "calc" would run a program on Windows.
 func TestRichTextLinkOpensSafely(t *testing.T) {
@@ -601,6 +658,72 @@ func TestRichTextLinkCanceledPress(t *testing.T) {
 
 // TestRichTextCJKWords deletes and moves by words in Chinese and
 // Japanese: a character at a time, as they have no spaces (#668).
+// Left and Right go through an offset with two caret places, the edge of
+// a span padded with PaddingX (code within text here) or a line wrapped
+// within a word, in two steps, and leave the paragraph only past its start
+// or end.
+func TestRichTextArrowsThroughTwoPlaces(t *testing.T) {
+	doc := NewDocument(TextOf(
+		Paragraph{Runs: []Run{{Text: "one"}}},
+		Paragraph{Runs: []Run{{Text: "say "}, {Text: "ok", Attributes: Attributes{Code: true}}, {Text: " now"}}},
+		Paragraph{Runs: []Run{{Text: strings.Repeat("会议", 40)}}},
+		Paragraph{Runs: []Run{{Text: "three"}}},
+	))
+	tt := ui.NewTester(func(c *ui.Context) {
+		Editor(c, doc, EditorOptions{Spans: func(_ int, _ ParagraphStyle, spans []ui.Span) []ui.Span {
+			for i := range spans {
+				if spans[i].Background.A != 0 {
+					spans[i].PaddingX = 4
+				}
+			}
+			return spans
+		}}).Fill()
+	}, 300, 400)
+	tt.Press(150, 380)
+	tt.Release(150, 380)
+	walk := func(from int, key ui.Key, n int) []int {
+		doc.SetSelection(from, from)
+		tt.Frame()
+		var at []int
+		for range n {
+			tt.Key(0, key)
+			_, c := doc.Selection()
+			at = append(at, c)
+		}
+		return at
+	}
+	// "say " is 4..8, "ok" 8..10, " now" 10..14.
+	if got, want := walk(4, ui.KeyRight, 13), []int{5, 6, 7, 8, 8, 9, 10, 10, 11, 12, 13, 14, 15}; !slices.Equal(got, want) {
+		t.Fatalf("Right through the code: %v, want %v", got, want)
+	}
+	if got, want := walk(14, ui.KeyLeft, 13), []int{13, 12, 11, 10, 10, 9, 8, 8, 7, 6, 5, 4, 3}; !slices.Equal(got, want) {
+		t.Fatalf("Left through the code: %v, want %v", got, want)
+	}
+	// The wrapped paragraph is 15..95: each offset in turn, a wrap's twice.
+	for _, key := range []ui.Key{ui.KeyRight, ui.KeyLeft} {
+		from, dir, past := 15, 1, 96
+		if key == ui.KeyLeft {
+			from, dir, past = 95, -1, 14
+		}
+		at := walk(from, key, 120)
+		last, twice := from, 0
+		for _, c := range at {
+			if c == past {
+				break
+			}
+			if c == last {
+				twice++
+			} else if c != last+dir {
+				t.Fatalf("%v through the wrapped paragraph went from %d to %d: %v", key, last, c, at)
+			}
+			last = c
+		}
+		if last != from+dir*80 || twice == 0 {
+			t.Fatalf("%v through the wrapped paragraph: %v", key, at)
+		}
+	}
+}
+
 func TestRichTextCJKWords(t *testing.T) {
 	word := ui.Ctrl
 	if runtime.GOOS == "darwin" {
@@ -770,6 +893,45 @@ func TestRichTextOnKey(t *testing.T) {
 	}
 }
 
+// OnCommand is asked about an edit command of the menus first, as a Mac's menu bar sends ⌘V: a command it takes does
+// nothing in the editor, and what it does to the document is kept; one it lets go is the editor's as before.
+func TestRichTextOnCommand(t *testing.T) {
+	doc := NewDocument(NewText("one two"))
+	var asked []string
+	tt := ui.NewTester(func(c *ui.Context) {
+		Editor(c, doc, EditorOptions{OnCommand: func(name string) bool {
+			asked = append(asked, name)
+			if name != "paste" {
+				return false
+			}
+			doc.SetLink("https://example.com")
+			return true
+		}}).Fill()
+	}, 500, 400)
+	tt.Press(10, 10)
+	tt.Release(10, 10)
+	tt.SetClipboardData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.Text, []byte("https://example.com")))))
+	doc.SetSelection(0, 3)
+	tt.Frame()
+	tt.Command("paste")
+	tt.Frame()
+	if got := doc.Text().String(); got != "one two" {
+		t.Fatalf("a command taken by OnCommand was the editor's too: %q", got)
+	}
+	if link := doc.Text().AttributesAt(1).Link; link != "https://example.com" {
+		t.Fatalf("what OnCommand did was undone: link %q", link)
+	}
+	doc.SetSelection(0, 0)
+	tt.Frame()
+	tt.Command("selectAll")
+	if a, c := doc.Selection(); a != 0 || c != 7 {
+		t.Fatalf("a command let go is not the editor's: selection %d-%d", a, c)
+	}
+	if len(asked) != 2 || asked[0] != "paste" || asked[1] != "selectAll" {
+		t.Fatalf("asked about %v", asked)
+	}
+}
+
 // Spans is given each paragraph's spans to draw them otherwise, its text the same; the layouts it made are kept until
 // SpansVersion changes.
 func TestRichTextSpans(t *testing.T) {
@@ -911,7 +1073,7 @@ func TestRichTextRightClickMovesCaret(t *testing.T) {
 func TestRichTextSpace(t *testing.T) {
 	doc := NewDocument(NewText("one\ntwo\nthree"))
 	var room float32
-	tt := ui.NewTester(func(c *ui.Context) {
+	tt := openTester(t, func(c *ui.Context) {
 		Editor(c, doc, EditorOptions{Space: func(p int) float32 {
 			if p == 1 {
 				return room
@@ -1031,5 +1193,79 @@ func TestTallEditorInScroll(t *testing.T) {
 	}
 	if ink < 2000 {
 		t.Fatalf("scrolled down the text, the view shows no text (%d marked pixels)", ink)
+	}
+}
+
+// An editor as tall as its text, in a scroll container, lays out again
+// only the paragraphs the container shows when its theme or its font
+// changes, or when the app builds it anew, keeping the others' heights
+// (those of another font scaled) until they come into view; its height,
+// ContentHeight, stays what the text takes.
+func TestTallEditorNewLook(t *testing.T) {
+	paras := make([]Paragraph, 3000)
+	for i := range paras {
+		paras[i] = para(fmt.Sprintf("Paragraph %d, long enough to wrap in a window this narrow at times.", i))
+	}
+	doc := NewDocument(TextOf(paras...))
+	dark := &Theme{Text: ui.Hex("#eeeeee")}
+	var th *Theme
+	size, tree := float32(14), 0
+	tt := ui.NewTester(func(c *ui.Context) {
+		c.Key(fmt.Sprint("tree", tree))
+		ui.Scroll(c).Fill().Children(func() {
+			ed := Editor(c, doc, EditorOptions{NoScrollbar: true, Theme: th, Font: ui.Font{Size: size}}).FillWidth()
+			h, ok := doc.ContentHeight()
+			if !ok {
+				h = 3000 * 60
+			}
+			ed.Height(h)
+		})
+	}, 500, 400)
+	tt.Frame()
+	tt.Frame()
+	v := doc.shownIn.Value()
+	tall, _ := doc.ContentHeight()
+	if v.laid < len(paras) || tall < 3000*14 {
+		t.Fatalf("the first frames laid out %d of %d paragraphs, %v tall", v.laid, len(paras), tall)
+	}
+	shows := func(what string) {
+		t.Helper()
+		v := doc.shownIn.Value()
+		if v.laid > 100 {
+			t.Fatalf("%s: %d paragraphs laid out again", what, v.laid)
+		}
+	}
+	th = dark
+	tt.Frame()
+	shows("another theme")
+	if h, _ := doc.ContentHeight(); h != tall {
+		t.Fatalf("another theme: %v tall, was %v", h, tall)
+	}
+	tree++
+	tt.Frame()
+	if doc.shownIn.Value() == v {
+		t.Fatal("the tree built anew kept its editor")
+	}
+	shows("an editor built anew")
+	if h, _ := doc.ContentHeight(); h != tall {
+		t.Fatalf("an editor built anew: %v tall, was %v", h, tall)
+	}
+	size = 21
+	tt.Frame()
+	shows("another font")
+	if h, _ := doc.ContentHeight(); h < tall*1.3 {
+		t.Fatalf("a larger font: %v tall, was %v", h, tall)
+	}
+	tt.Wheel(250, 200, 0, 20000)
+	tt.Advance(time.Second)
+	v = doc.shownIn.Value()
+	far := 0
+	for i := 300; i < len(v.paras); i++ {
+		if v.paras[i].layout != nil {
+			far++
+		}
+	}
+	if far == 0 || v.laid > 300 {
+		t.Fatalf("scrolled down the text, %d paragraphs there laid out, %d in all", far, v.laid)
 	}
 }

@@ -336,22 +336,22 @@ func (v *view) linkAt(x, y float32) linkMatch {
 	col, row := v.cellAt(x, y)
 	if ref, ok := v.t.term.CellAt(col, row); ok {
 		if url := v.t.term.Hyperlink(ref); url != "" {
-			a, b := col, col+1
-			for a > 0 {
-				ref, ok := v.t.term.CellAt(a-1, row)
-				if !ok || v.t.term.Hyperlink(ref) != url {
-					break
-				}
+			// The hyperlink's cells around the pointed one, counted across
+			// the viewport as upstream does: a row's edge is crossed only
+			// where the row soft-wraps, so a long hyperlink is one link.
+			at := func(i int) bool {
+				ref, ok := v.t.term.CellAt(i%v.cols, i/v.cols)
+				return ok && v.t.term.Hyperlink(ref) == url
+			}
+			a, b := row*v.cols+col, row*v.cols+col+1
+			for a > 0 && (a%v.cols != 0 || v.wraps(a/v.cols-1)) && at(a-1) {
 				a--
 			}
-			for b < v.cols {
-				ref, ok := v.t.term.CellAt(b, row)
-				if !ok || v.t.term.Hyperlink(ref) != url {
-					break
-				}
+			for b < v.rows*v.cols && (b%v.cols != 0 || v.wraps(b/v.cols-1)) && at(b) {
 				b++
 			}
-			return linkMatch{linkTarget: linkTarget{URL: url}, raw: url, cellA: a, cellB: b, row: row}
+			start := a / v.cols
+			return linkMatch{linkTarget: linkTarget{URL: url}, raw: url, cellA: a - start*v.cols, cellB: b - start*v.cols, row: start}
 		}
 	}
 	if m := v.hardWrappedFileAt(col, row); m.valid() && v.t.opts.OpenLink != nil {
@@ -366,6 +366,16 @@ func (v *view) linkAt(x, y float32) linkMatch {
 		m.setCells(cols, start)
 	}
 	return m
+}
+
+// wraps reports whether row r of the viewport soft-wraps into the next;
+// the emulator lock is held.
+func (v *view) wraps(r int) bool {
+	if r < 0 || r >= v.rows-1 {
+		return false
+	}
+	_, wrap := v.t.term.Row(r)
+	return wrap
 }
 
 func (m *linkMatch) setCells(cols []int, start int) {

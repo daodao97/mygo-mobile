@@ -1706,9 +1706,12 @@ func (t *Terminal) HoveredLink() (link string, path bool, at ui.Rect) {
 		}
 		path = true
 	}
-	_, row := v.cellAt(v.pointer[0], v.pointer[1])
-	a, b := max(m.cellA, (row-m.row)*v.cols), min(m.cellB, (row-m.row+1)*v.cols)
+	// Around the rows a link wraps over, as upstream's; its cells on one row.
+	a, b, last := m.cellA, m.cellB, m.row+max(m.cellB-1, 0)/v.cols
+	if last > m.row {
+		a, b = 0, v.cols
+	}
 	cw, ch := float32(v.cellW)/v.scale, float32(v.cellH)/v.scale
-	at = ui.Rect{X: float32(v.ox)/v.scale + float32(a-(row-m.row)*v.cols)*cw, Y: float32(v.oy)/v.scale + float32(row)*ch, W: float32(max(b-a, 0)) * cw, H: ch}
+	at = ui.Rect{X: float32(v.ox)/v.scale + float32(a)*cw, Y: float32(v.oy)/v.scale + float32(m.row)*ch, W: float32(max(b-a, 0)) * cw, H: float32(last-m.row+1) * ch}
 	return
 }

@@ -325,6 +325,10 @@ type engine struct {
 	// paints counts the frames painted, those painting the last frame's
 	// elements again included.
 	paints uint64
+	// paintFrames counts the frames that paint, built or painting the
+	// last frame's elements again, however many times each paints
+	// (scaleWatch).
+	paintFrames uint64
 	// posed are the elements of the last frame built with a pose
 	// (AnimatePose), parents first.
 	posed        []*node
@@ -779,6 +783,7 @@ func (rt *engine) runFrame() {
 	rt.c.safeArea = rt.safeArea()
 	rt.c.vibrancy = rt.host.vibrancy()
 	rt.text.BeginFrame()
+	rt.paintFrames++
 	rt.paths.large = rt.paths.large[:0]
 	rt.paths.switching = false
 	rt.gen = rt.text.Generation()
@@ -877,11 +882,12 @@ func (rt *engine) runFrame() {
 			break
 		}
 	}
-	if rt.zoomChanged {
-		// Zoomed in the last pass: laid out at the new size, and built
-		// at it in the next frame.
+	if nw, nh, ns := rt.size(); rt.zoomChanged || nw != w || nh != h || ns != scale {
+		// Zoomed in the last pass, or the view resized its native host:
+		// lay out and paint at the current size. Rebuild next frame for
+		// views that read Context.Size while building.
 		rt.zoomChanged = false
-		w, h, scale = rt.size()
+		w, h, scale = nw, nh, ns
 		appW = rt.insp.contentWidth(w)
 		rt.c.titleBar = rt.titleBar()
 		rt.c.safeArea = rt.safeArea()
@@ -1201,6 +1207,7 @@ func (rt *engine) repaintFrame(w, h, scale float32) {
 	start := rt.frameStart
 	rt.c.now = rt.frameTime()
 	rt.text.BeginFrame()
+	rt.paintFrames++
 	rt.paths.large = rt.paths.large[:0]
 	rt.paths.switching = false
 	rt.repainting, rt.repaintAt = false, time.Time{}

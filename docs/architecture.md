@@ -2985,6 +2985,15 @@ either.
   alone, as Enter choosing a candidate: on macOS `keyDown:` sends no
   `KeyPressed` while there is marked text, as GTK's input method filters
   such keys on Linux and IMM32 makes them `VK_PROCESSKEY` on Windows.
+  The guarantee is these filters' (in browsers, `isComposing`): a key
+  that reaches the engine passed the input method, which may have left
+  it with the composition still marked (IBus in sync mode gives one up
+  with Escape and never empties the preedit), so the engine acts on
+  every key it gets. A `Tester`, which has no input method, keeps a key
+  pressed without Ctrl or Super from the content while the focus's
+  client has marked text (`Tester.composingKey`), as macOS does, and
+  leaves the composition be, so that `Compose` then `Key` shows what
+  users get.
   A composition an input method gives up, as with Escape, goes: the
   Microsoft Japanese IME sends `WM_IME_COMPOSITION` with neither
   `GCS_COMPSTR` nor `GCS_RESULTSTR` then, which empties the marked text
@@ -3024,6 +3033,26 @@ either.
   with UI Automation's events.
   What assistive technology does comes back as `AccessAction` events,
   which the engine performs as the pointer or the keyboard would.
+  An element may add nodes of its own inside its node
+  (`AccessChildren`, internal to the module as `Access` is), after its
+  node and before the elements inside it, as the lines of a diff, built
+  only with the tree: their IDs are no element's, so actions on them do
+  nothing, and `Tester` reads their roles from the node's
+  (`roleOfNode`). A text field says where its lines in view are
+  (`AccessNode.LineBoxes`, by their index in `Value`), from which
+  `platform.RangeBounds` finds where a range of UTF-16 units shows;
+  lines end after their line feeds, as `platform.LineOfUnit` and
+  `LineUnits` count them for AppKit's `accessibilityLineForIndex:`,
+  `accessibilityRangeForLine:` and `accessibilityFrameForRange:` (with
+  `AXInsertionPointLineNumber` and `AXVisibleCharacterRange`), as the
+  Windows and Linux bridges take lines from `Value`; a run of lines
+  collapsed has one box (`AccessLineBox.Count`), its diff separator's or
+  its fold's line. A selection moving with the text unchanged posts
+  `AXSelectedTextChanged` with WebKit's `AXTextStateChangeType`,
+  `AXTextSelectionDirection` and `AXTextSelectionGranularity`
+  (`platform.SelectionChange` judges them from the old and new
+  selection), by which VoiceOver reads the line the caret went to at
+  once rather than when it next polls the field.
   An element ignoring input (`IgnoreInput`: a field of the node, as
   the flags are all taken, and of its state, which the elements inside
   it inherit at commit) adds no hits nor stop of Tab and drops the focus,
@@ -3495,9 +3524,12 @@ either.
   with `After`, or waits for the goroutine to wake the window (`waiting`)
   when it has no frame due yet. A video of the system's media framework
   (`ui/video`, below) moves on by the framework's clock instead; a muted
-  one holds still out of sight, as a decoder's does. The window shows its last
-  frame until then, about a refresh: captures of it meanwhile, as sharing
-  its window in a video call, see that frame. A frame still builds after
+  one holds still out of sight, as a decoder's does. Either asks for its
+  next frame from a frame built out of sight too, which waits for the
+  window to show: asking for none, nothing would build it once it
+  shows. The window shows its last frame until then, about a refresh:
+  captures of it meanwhile, as sharing its window in a video call, see
+  that frame. A frame still builds after
   input (`input`, as keys typed into a key window another app's covers),
   as assistive technology turns on, and for `CapturePage`, which builds
   the frame waiting, held or asked for and not come
@@ -3622,7 +3654,10 @@ either.
   window asks for the next picture with `After` at the engine's interval,
   or an engine that knows when one comes (GStreamer's appsink, the
   element's `requestVideoFrameCallback`) wakes it (`Engine.SetWake`),
-  as it does for a change of state. The interval is asked for only once
+  as it does for a change of state and for the first picture, though
+  `Frame` is what makes AVFoundation's ready: its goroutine wakes the
+  window once the output has a picture, for nothing else may build a
+  frame to take it (#1830). The interval is asked for only once
   the video loaded: AVFoundation's reads the nominal frame rate on the
   engine's goroutine once the item is ready to play, as reading an
   `AVURLAsset`'s tracks before then loads them, over the network, on the
@@ -3679,6 +3714,27 @@ either.
   there, including resting changes to transformed content.
   Metal retains wide colors under transforms. See
   [Transforms](ui/transforms.md#rendering) for rendering details.
+  Text under a transform that scales it rasterizes at the scale it shows
+  at (`ui/rasterscale.go`, #1840), as Chromium rasterizes a layer at its
+  ideal contents scale: `transformScale` takes the transform's largest
+  stretch around the text (its derivative's largest singular value, at
+  the layout's center in perspective), and `glyphSpace` rasterizes the
+  glyphs at the window's scale times it, under the transform times
+  `Scaling(1/q)`; where the transform only scales by that and moves, the
+  glyphs are placed in the frame's pixels and their op has no transform,
+  as text laid out there (`glyphSpace.screen`). A transform that scales by
+  1 (within `scaleSlack` of a step) leaves text as it was, and so does no
+  transform: `glyphSpace` returns at once. The scale is exact while it
+  stays as in the frame before (`scaleWatch`, in the state of the element
+  painting, `Painter.owner`, counted by `engine.paintFrames`); while it
+  changes it is `scaleBucket`'s, the step of 2^(1/8) at or above it, and
+  the frame it changes in asks for one more, so that glyphs rasterize a
+  few times in an animation, not once a frame, and exactly at rest. A
+  layer kept by `Cache`, or a group's (`paintGroup`), renders the same way
+  (`layerScale`): at the window's scale times that, at most 4096 pixels
+  across, drawn `Scaling(1/q)` under the element's transform, and on
+  whole pixels at rest where that leaves only a translation (`layerOp`).
+  Effects' and blurs' layers stay at the window's scale.
 - **Masked clips** (`ui/mask.go`, `scene.ClipShapeOf`). A clip
   (`OpPushClip`) may carry a gradient paint, whose alpha masks it
   (`MaskLinearGradient` and the others, around the element's inset
@@ -4415,7 +4471,13 @@ either.
     lines are paired by similarity and their words diffed, words one
     character apart joined (Pierre's word-alt). An edit re-diffs only the
     region of the hunks it touched, extended to the unchanged lines
-    around. The split view is two editors sharing their scroll, their
+    around. Texts past 10,000 lines or 1 MB together, once a window
+    shows a buffer of them, are compared whole on a goroutine
+    (`diffModel.full`, `diffJob`), the build showing them with no hunks
+    until it is done and wakes the windows showing the buffers
+    (`Buffer.invalidate`); the next `update` takes the hunks if the old
+    text is still of the version compared, and moves them past the new
+    text's edits since as for any edit, or else compares anew. The split view is two editors sharing their scroll, their
     lines aligned by spacer blocks, unchanged lines too where the sides
     wrap at unlike widths; the unified view one editor of the new text,
     with blocks painting the deleted lines from a view of the old one.
@@ -4434,6 +4496,14 @@ either.
     an editor out at another height does (`builtViewH`), so that what
     read `ScrollY` or `ViewportHeight` before, as an app's minimap,
     follows.
+    To assistive technology (`ui/editor/access.go`), an editor gives
+    the boxes of its lines in view, and a side of a diff a node for each
+    of them, in the order they show (`accessLines`): an insertion, a
+    deletion (the unified view's deleted lines too, which are blocks, not
+    the side's text, described by their old numbers, "Old line 12") or a
+    text, named by its text and described by its number, from the lines the last frame painted, so that its cost is
+    the view's; a separator is described by the numbers of the lines it
+    collapses.
   - *Parts* (`parts.go`, `diffparts.go`). The bars and popups around the
     text (find, go to line, completions, hovers) and a diff's separators,
     actions on changes and gutter button are elements the editor places
@@ -4582,8 +4652,13 @@ either.
   a text; a click on the text of a row chosen before the click edits it
   once the double-click time has passed.
 - **Outlines** (`ui/outline.go`). An outline flattens the open part of
-  its tree into rows every frame (`OutlineState.flatten`), which a `List`
-  or a `Table` builds as they show, keyed by their items. Rows are tree
+  its tree into rows (`OutlineState.flatten`), which a `List` or a
+  `Table` builds as they show, keyed by their items: every frame, or,
+  with a `Generation`, which the app changes as `children` does, only
+  when it, `Open` or the roots change. `Open` changes are seen by the
+  stamp of a `Selection`, which each change of its keys takes from one
+  counter of all Selections (`selectionStamps`), so another Selection
+  put in its place has another stamp. Rows are tree
   items, with how deep they are (`AccessNode.Level`) and whether they
   have children (`AccessExpandable`), open or not: on macOS, the rows of
   an `AXOutline` with `AXDisclosureLevel` and `AXDisclosing`, which keeps
@@ -5047,7 +5122,8 @@ either.
   place of the paint; `raster.maskedEffect` is the CPU twin. An
   element's effect (`Element.Effect`, a `ui.Effect`) renders the
   element's subtree into a canvas kept in its state, at the window's
-  scale, in the element's own space (`paintEffect`: positions shift, and
+  scale (a layer kept by `Cache` alone, or a group's, at the scale its
+  transform shows it at too: `layerScale`), in the element's own space (`paintEffect`: positions shift, and
   transforms in the subtree lose the element's own, `unworld`), then
   paints the effect with the element's transform. The canvas is made in
   steps of 64 pixels (`effectLayerStep`), the content in its top left
